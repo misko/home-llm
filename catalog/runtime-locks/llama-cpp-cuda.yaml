@@ -1,0 +1,20 @@
+schema_version: 1
+id: llama-cpp-cuda-4090
+source: https://github.com/ggml-org/llama.cpp.git
+commit: 95ef7fc16054e63b427a3ef00188e055ef7586d8
+build:
+  generator: cmake
+  options:
+    GGML_CUDA: true
+    LLAMA_CURL: true
+    BUILD_SHARED_LIBS: false
+    CMAKE_CUDA_ARCHITECTURES: "89"
+    CMAKE_BUILD_TYPE: Release
+binary: cache/runtimes/llama-cpp-cuda-4090/llama-server
+binary_sha256: 16641abf2f14d4323e49bc0c1ba97dd9ef5a63ebd573fe22aa10f08bfa535c52
+version_contains: commit 95ef7fc
+verified:
+  llama_cpp_version: 0.3.0-dev
+  gpu: NVIDIA GeForce RTX 4090
+  compute_capability: "8.9"
+  linkage: static_llama_cpp_with_system_cuda_runtime

@@ -1,0 +1,21 @@
+schema_version: 1
+id: muse-glimmer-30b
+display_name: Muse Glimmer 30B
+family: muse-glimmer
+description: Multimodal agent and tool-use model with an official 24 GB GPU quantization.
+total_params_b: 29.6
+active_params_b: 29.6
+native_context: 131072
+modalities: [text, image]
+capabilities: [chat, reasoning, tools, structured_output, vision]
+license:
+  name: Apache-2.0
+  url: https://huggingface.co/meta-models/Muse-Glimmer-30B/blob/main/LICENSE
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+upstream:
+  provider: huggingface
+  repo_id: meta-models/Muse-Glimmer-30B
+  repo_type: model
+  revision: a4e59da52a7bc87ae7251dd5545c0dd437c44b68

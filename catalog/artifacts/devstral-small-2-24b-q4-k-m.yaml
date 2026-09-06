@@ -1,0 +1,20 @@
+schema_version: 1
+id: devstral-small-2-24b-q4-k-m
+model_id: devstral-small-2-24b
+source:
+  provider: huggingface
+  repo_id: lmstudio-community/Devstral-Small-2-24B-Instruct-2512-GGUF
+  repo_type: model
+  revision: e471f62bf546b027d9f23f679bcd1a295eabf403
+format: gguf
+quantization: Q4_K_M
+expected_size_bytes: 15212493197
+files:
+  - pattern: Devstral-Small-2-24B-Instruct-2512-Q4_K_M.gguf
+    role: weights
+  - pattern: mmproj-Devstral-Small-2-24B-Instruct-2512-F16.gguf
+    role: vision_projector
+  - pattern: README.md
+    role: model_card
+requires_remote_code: false
+notes: Community Q4 conversion; the official upstream model and exact conversion revision are both pinned.

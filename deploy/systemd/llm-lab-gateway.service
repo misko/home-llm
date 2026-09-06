@@ -1,0 +1,20 @@
+[Unit]
+Description=LLM Lab OpenAI-compatible gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/mouse9911/gits/llms
+Environment=LLM_LAB_REPO=/home/mouse9911/gits/llms
+Environment=LLM_LAB_DATA=/mnt/md2/llm-lab
+EnvironmentFile=-/home/mouse9911/gits/llms/.env
+ExecStart=/home/mouse9911/gits/llms/.venv/bin/uvicorn llm_lab.gateway:app --host 127.0.0.1 --port 14000
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

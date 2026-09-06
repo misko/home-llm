@@ -1,0 +1,21 @@
+schema_version: 1
+id: devstral-small-2-24b
+display_name: Devstral Small 2 24B
+family: devstral-2
+description: Focused local software-engineering and coding-agent model.
+total_params_b: 24.0
+active_params_b: 24.0
+native_context: 262144
+modalities: [text, image]
+capabilities: [chat, tools, structured_output, vision, coding_agent]
+license:
+  name: Apache-2.0
+  url: https://huggingface.co/mistralai/Devstral-Small-2-24B-Instruct-2512
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+upstream:
+  provider: huggingface
+  repo_id: mistralai/Devstral-Small-2-24B-Instruct-2512
+  repo_type: model
+  revision: 55c5b41e98c2dbd21b0c8afffc540dcfc9eb5128

@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+.env
+dist/
+build/
+.ruff_cache/
+
+# The control repository never owns heavyweight model data or run output.
+.llm-lab-data/
+data/
+runs/
+*.gguf
+*.safetensors
+*.bin
+*.pth

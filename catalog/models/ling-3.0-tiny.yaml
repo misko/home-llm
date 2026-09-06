@@ -1,0 +1,21 @@
+schema_version: 1
+id: ling-3.0-tiny
+display_name: Ling 3.0 Tiny
+family: ling-3.0
+description: Small hybrid MoE model for fast local reasoning and tool use.
+total_params_b: 7.9
+active_params_b: 1.3
+native_context: 262144
+modalities: [text]
+capabilities: [chat, reasoning, tools, structured_output]
+license:
+  name: MIT
+  url: https://huggingface.co/inclusionAI/Ling-3.0-tiny
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+upstream:
+  provider: huggingface
+  repo_id: inclusionAI/Ling-3.0-tiny
+  repo_type: model
+  revision: b61f4338de3e68ffc9c0bc1ed5e902981a4a929e

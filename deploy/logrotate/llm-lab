@@ -1,0 +1,10 @@
+/mnt/md2/llm-lab/logs/*.log {
+    weekly
+    rotate 8
+    size 100M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

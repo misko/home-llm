@@ -1,0 +1,21 @@
+schema_version: 1
+id: qwen3.8-27b-q4-k-m
+model_id: qwen3.8-27b
+source:
+  provider: huggingface
+  repo_id: bartowski/Qwen3.8-27B-GGUF
+  repo_type: model
+  revision: f0eec4a4bb4975114a030d048952d83c0a53c034
+format: gguf
+quantization: Q4_K_M
+effective_bpw: 5.27
+expected_size_bytes: 18700159216
+files:
+  - pattern: Qwen3.8-27B-Q4_K_M.gguf
+    role: weights
+  - pattern: mmproj-Qwen3.8-27B-f16.gguf
+    role: vision_projector
+  - pattern: README.md
+    role: model_card
+requires_remote_code: false
+notes: Community conversion of the official checkpoint; upstream provenance is tracked separately.

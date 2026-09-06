@@ -1,0 +1,76 @@
+schema_version: 1
+id: smoke
+version: "1.0.0"
+description: Fast API, template, deterministic output, JSON, and tool-call validation.
+kind: smoke
+defaults:
+  temperature: 0
+  top_p: 1
+  max_tokens: 256
+  seed: 42
+warmup_repetitions: 0
+repetitions: 1
+cases:
+  - id: nonempty-chat
+    messages:
+      - role: system
+        content: Answer directly and concisely.
+      - role: user
+        content: Name the planet humans live on.
+    expectations:
+      - kind: contains
+        value: Earth
+        case_sensitive: false
+      - kind: nonempty
+
+  - id: structured-json
+    messages:
+      - role: system
+        content: Return only valid JSON.
+      - role: user
+        content: Return an object with status equal to ok and count equal to 2.
+    request_overrides:
+      response_format:
+        type: json_schema
+        json_schema:
+          name: smoke_result
+          strict: true
+          schema:
+            type: object
+            properties:
+              status: {type: string, const: ok}
+              count: {type: integer, const: 2}
+            required: [status, count]
+            additionalProperties: false
+    expectations:
+      - kind: json_schema
+        value:
+          type: object
+          properties:
+            status: {type: string, const: ok}
+            count: {type: integer, const: 2}
+          required: [status, count]
+          additionalProperties: false
+
+  - id: tool-call
+    messages:
+      - role: user
+        content: What is the weather in Seattle? Use the weather tool.
+    request_overrides:
+      tools:
+        - type: function
+          function:
+            name: get_weather
+            description: Get current weather for a city.
+            parameters:
+              type: object
+              properties:
+                city: {type: string}
+              required: [city]
+      tool_choice:
+        type: function
+        function: {name: get_weather}
+    required_capabilities: [tools]
+    expectations:
+      - kind: tool_name
+        value: get_weather

@@ -1,0 +1,17 @@
+schema_version: 1
+id: ling-3.0-tiny-q4-k-m
+model_id: ling-3.0-tiny
+source:
+  provider: huggingface
+  repo_id: inclusionAI/Ling-3.0-tiny-GGUF
+  repo_type: model
+  revision: 01b850e29ed5b44e2b810160ff980a9bb353296f
+format: gguf
+quantization: Q4_K_M
+expected_size_bytes: 4823895906
+files:
+  - pattern: Ling-3.0-tiny-Q4_K_M.gguf
+    role: weights
+  - pattern: README.md
+    role: model_card
+requires_remote_code: false

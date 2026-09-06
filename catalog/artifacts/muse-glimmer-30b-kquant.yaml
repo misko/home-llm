@@ -1,0 +1,22 @@
+schema_version: 1
+id: muse-glimmer-30b-kquant
+model_id: muse-glimmer-30b
+source:
+  provider: huggingface
+  repo_id: meta-models/Muse-Glimmer-30B-GGUF
+  repo_type: model
+  revision: 70bf1b61ac09f91b24d39038091b41c582bc5d7a
+format: gguf
+quantization: KQuant-17GB-Q4_K_M
+expected_size_bytes: 18157050004
+files:
+  - pattern: Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf
+    role: weights
+  - pattern: mmproj-Muse-Glimmer-30B-Q4_K_M.gguf
+    role: vision_projector
+  - pattern: LICENSE
+    role: license
+  - pattern: README.md
+    role: model_card
+requires_remote_code: false
+notes: Official quantized artifact intended for a 24 GB GPU; draft model intentionally excluded.
