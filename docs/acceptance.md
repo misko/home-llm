@@ -21,6 +21,19 @@ git diff --check
 uv run pytest -q
 ```
 
+- [ ] The browser console type-checks, its unit and Chromium E2E suites pass,
+  and the committed production bundle is current. Browser installation is a
+  one-time Playwright prerequisite.
+
+```bash
+npm --prefix web ci
+npm --prefix web run typecheck
+npm --prefix web test
+(cd web && npx playwright install chromium && npm run test:e2e)
+npm --prefix web run build
+git diff --exit-code -- src/llm_lab/web_dist
+```
+
 - [ ] The current CLI initializes an isolated data plane and exposes the
   catalog/storage read paths. No model data is downloaded.
 

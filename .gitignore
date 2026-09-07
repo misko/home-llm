@@ -9,6 +9,11 @@ htmlcov/
 dist/
 build/
 .ruff_cache/
+web/node_modules/
+web/coverage/
+web/playwright-report/
+web/test-results/
+web/*.tsbuildinfo
 
 # The control repository never owns heavyweight model data or run output.
 .llm-lab-data/

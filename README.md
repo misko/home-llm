@@ -32,6 +32,8 @@ which supported backend is active.
   SHA-256, and version evidence before activation and benchmarking
 - A stable OpenAI-compatible gateway with optional bearer authentication,
   streaming pass-through, and per-request active-state routing
+- A browser console for chat, reviewed model switching, benchmark launch and
+  history, storage inspection, and system/runtime identity
 - Backend launch plans for llama.cpp, vLLM, SGLang, TensorRT-LLM, external
   endpoints, and a mock backend
 - An async OpenAI-compatible benchmark runner with warmups, repetitions,
@@ -95,9 +97,10 @@ model and artifact identity.
 ## Quick start
 
 Requirements are Python 3.11 or newer and
-[`uv`](https://docs.astral.sh/uv/). GPU serving additionally needs a compatible
-NVIDIA driver and either Docker with NVIDIA Container Toolkit or a local backend
-binary.
+[`uv`](https://docs.astral.sh/uv/). Building or changing the browser console
+also requires Node.js 20.19+ or 22.12+ and npm. GPU serving additionally needs
+a compatible NVIDIA driver and either Docker with NVIDIA Container Toolkit or
+a local backend binary.
 
 ```bash
 uv sync --dev --locked
@@ -154,6 +157,52 @@ The gateway passes through `/v1/models`, `/v1/chat/completions`,
 `/health` endpoint remains available without a bearer token. It does not provide
 TLS, and direct backend ports do not gain gateway authentication; keep both on
 loopback or put a reviewed TLS proxy and firewall in front.
+
+## Web console
+
+The gateway serves the compiled console at
+[`http://127.0.0.1:14000/ui/`](http://127.0.0.1:14000/ui/). It uses the same
+catalog, runtime manager, durable operation records, and OpenAI-compatible chat
+routes as the CLI and gateway. Model activation is asynchronous: the page
+submits one reviewed deployment ID, then polls the durable operation through
+artifact verification, switching, readiness, and any rollback.
+
+Keep the production gateway on loopback. From another workstation, use an SSH
+tunnel and open the loopback URL in the local browser:
+
+```bash
+ssh -N -L 14000:127.0.0.1:14000 user@kalman
+```
+
+For frontend development, install the locked npm tree and start Vite. The dev
+server listens on port 5173 and proxies API/chat requests to the loopback
+gateway:
+
+```bash
+npm --prefix web ci
+npm --prefix web run dev
+# Development only: http://kalman:5173/ui/
+```
+
+Port 5173 has no login boundary and exposes lifecycle operations to every host
+that can reach it. Use it only on a trusted, firewalled network. The browser
+console does not currently implement a bearer-token login flow, so setting
+`LLM_LAB_API_KEY` protects `/api/v1/*` but makes interactive console calls
+unauthorized. For shared or untrusted networks, put an authenticated TLS/session
+proxy in front rather than exposing Vite or the gateway directly.
+
+Run the frontend gates with:
+
+```bash
+npm --prefix web run typecheck
+npm --prefix web test
+(cd web && npx playwright install chromium && npm run test:e2e)
+npm --prefix web run build
+```
+
+The production bundle is committed under `src/llm_lab/web_dist` and packaged in
+the Python wheel. Run `git diff --exit-code -- src/llm_lab/web_dist` after the
+build in release automation to prevent stale browser assets.
 
 ## Reproducible results
 

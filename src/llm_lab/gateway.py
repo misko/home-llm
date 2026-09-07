@@ -8,7 +8,8 @@ import os
 import secrets
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -19,6 +20,9 @@ from .attestation import configured_gateway_origin, create_gateway_attestation
 from .errors import DeploymentError, IntegrityError
 from .paths import LabPaths
 from .runtime import RuntimeManager, RuntimeState, read_active_state
+
+if TYPE_CHECKING:
+    from .console_api import ConsoleController
 
 
 _REQUEST_HEADER_DENYLIST = {
@@ -145,6 +149,9 @@ def create_app(
     client: httpx.AsyncClient | None = None,
     advertised_origin: str | None = None,
     runtime_manager: RuntimeManager | None = None,
+    console_controller: "ConsoleController | None" = None,
+    console_static_directory: str | Path | None = None,
+    enable_console: bool = True,
 ) -> FastAPI:
     """Create a gateway whose target is resolved from active state per request."""
 
@@ -157,6 +164,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         yield
+        console = getattr(application.state, "console_controller", None)
+        if application.state.owns_console_controller and console is not None:
+            console.close()
         upstream_client = application.state.upstream_client
         if application.state.owns_upstream_client and upstream_client is not None:
             await upstream_client.aclose()
@@ -172,11 +182,13 @@ def create_app(
     app.state.upstream_client = client
     app.state.owns_upstream_client = client is None
     app.state.runtime_manager = runtime_manager or RuntimeManager(resolved_paths)
+    app.state.owns_console_controller = console_controller is None
 
     @app.middleware("http")
     async def authenticate(request: Request, call_next):
         expected = app.state.api_key
-        if expected and request.url.path.startswith("/v1/"):
+        protected = request.url.path.startswith(("/v1/", "/api/v1/"))
+        if expected and protected:
             authorization = request.headers.get("authorization", "")
             scheme, separator, token = authorization.partition(" ")
             valid = (
@@ -192,7 +204,19 @@ def create_app(
                 )
                 response.headers["WWW-Authenticate"] = "Bearer"
                 return response
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path.startswith(("/ui", "/api/v1/")):
+            response.headers.setdefault("X-Content-Type-Options", "nosniff")
+            response.headers.setdefault("Referrer-Policy", "no-referrer")
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; "
+                "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+                "font-src 'self'; object-src 'none'; base-uri 'none'; "
+                "frame-ancestors 'none'",
+            )
+        return response
 
     async def active_state() -> RuntimeState | JSONResponse:
         try:
@@ -317,6 +341,16 @@ def create_app(
     app.add_api_route("/v1/chat/completions", proxy, methods=["POST"])
     app.add_api_route("/v1/completions", proxy, methods=["POST"])
     app.add_api_route("/v1/responses", proxy, methods=["POST"])
+    if enable_console:
+        from .console_api import install_console
+
+        install_console(
+            app,
+            resolved_paths,
+            runtime_manager=app.state.runtime_manager,
+            controller=console_controller,
+            static_directory=console_static_directory,
+        )
     return app
 
 

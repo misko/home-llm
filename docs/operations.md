@@ -273,6 +273,29 @@ unauthenticated. The default ports bind locally and the gateway does not provide
 TLS; do not use a routable host without a reviewed TLS proxy and firewall
 policy. Direct backend ports bypass gateway authentication.
 
+### Browser console
+
+The same single-worker gateway serves the compiled operator console at
+`http://127.0.0.1:14000/ui/`. Keep it on loopback and use an SSH tunnel for a
+remote browser:
+
+```bash
+ssh -N -L 14000:127.0.0.1:14000 user@kalman
+```
+
+Then open `http://127.0.0.1:14000/ui/` locally. Use exactly one gateway worker;
+durable console operations are serialized in-process and multi-worker serving
+is not supported. Do not expose the Vite development server or unauthenticated
+control API outside a trusted, firewalled network. When gateway bearer auth is
+enabled, use the CLI/API until an authenticated browser session proxy is in
+place; the console has no token-entry flow.
+
+The Models page verifies the selected catalog deployment before switching and
+shows durable operation progress. Closing a page does not cancel admitted work.
+On activation failure, the runtime manager attempts to restore the prior ready
+deployment. Inspect `llmctl serve status` and the operator journal if status
+polling is interrupted.
+
 ## 8. Run and index a benchmark
 
 The benchmark runner records the five applicable declarative identities,
