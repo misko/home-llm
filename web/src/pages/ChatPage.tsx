@@ -2,21 +2,26 @@ import { useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Bot,
   BrainCircuit,
+  CheckCircle2,
   Code2,
   Copy,
+  ExternalLink,
   ImagePlus,
+  LoaderCircle,
   Paperclip,
   Send,
   Settings2,
+  ShieldCheck,
   Square,
   Trash2,
   User,
   Wrench,
   X,
 } from "lucide-react";
+import { RESEARCH_TOOLSET, streamAgentTurn } from "../api/agent";
 import { streamChat } from "../api/chat";
 import { createClientId } from "../api/id";
-import type { ChatAttachment, ChatMessage, ToolCall } from "../api/types";
+import type { AgentSource, AgentToolExecution, ChatAttachment, ChatMessage, ToolCall } from "../api/types";
 import { usePortfolio, useRuntime } from "../hooks/useConsoleData";
 import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
@@ -26,6 +31,10 @@ const prompts = [
   ["Draft a structured plan", "Create a concrete implementation plan for "],
   ["Compare technical options", "Compare these technical options and recommend one: "],
 ] as const;
+const supportedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const maximumConversationImages = 4;
+const maximumConversationMessages = 64;
+const maximumInstructionsLength = 16_384;
 
 function now() {
   return new Date().toISOString();
@@ -42,6 +51,65 @@ function ToolCallCard({ tool }: { tool: ToolCall }) {
   );
 }
 
+function formatValue(value: unknown) {
+  if (typeof value === "string") {
+    try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
+  }
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+function toolLabel(name: string) {
+  return name.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function ToolExecutionCard({ tool }: { tool: AgentToolExecution }) {
+  const statusLabel = tool.status === "running" ? "Running" : tool.status === "completed" ? "Complete" : "Failed";
+  const disclosure = tool.name === "calculator" || tool.name === "current_time"
+    ? "Runs locally · no network or writes"
+    : tool.name === "web_search" || tool.name === "web_fetch"
+      ? "Sends queries and requested public pages to the internet · no writes"
+      : "Read-only tool · no writes";
+  return (
+    <details className={"tool-execution-card " + tool.status} open={tool.status === "running"} data-testid={"tool-" + tool.id}>
+      <summary>
+        <span className="tool-icon"><Wrench size={14} /></span>
+        <span className="tool-identity">
+          <strong>{toolLabel(tool.name)}</strong>
+          <small>{disclosure}</small>
+        </span>
+        <span className={"tool-status " + tool.status}>
+          {tool.status === "running" ? <LoaderCircle className="spin" size={13} /> : tool.status === "completed" ? <CheckCircle2 size={13} /> : <X size={13} />}
+          {statusLabel}
+        </span>
+      </summary>
+      <div className="tool-execution-detail">
+        {tool.arguments !== undefined && <div><span>Arguments</span><pre>{formatValue(tool.arguments)}</pre></div>}
+        {tool.status === "completed" && tool.result !== undefined && <div><span>Result</span><pre>{formatValue(tool.result)}</pre></div>}
+        {tool.error && <div className="tool-error"><span>{tool.error.code ?? "Tool error"}</span><p>{tool.error.message}</p></div>}
+      </div>
+    </details>
+  );
+}
+
+function SourceList({ sources }: { sources: AgentSource[] }) {
+  if (!sources.length) return null;
+  return (
+    <section className="source-list" aria-label="Sources">
+      <h3>Sources</h3>
+      <ol>
+        {sources.map((source) => (
+          <li key={source.url}>
+            <a href={source.url} target="_blank" rel="noreferrer">
+              <span><strong>{source.title}</strong>{source.snippet && <small>{source.snippet}</small>}</span>
+              <ExternalLink size={13} />
+            </a>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export function ChatPage() {
   const runtime = useRuntime();
   const portfolio = usePortfolio();
@@ -54,6 +122,7 @@ export function ChatPage() {
   const [temperature, setTemperature] = useState(0);
   const [maxTokens, setMaxTokens] = useState(1024);
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [toolsEnabled, setToolsEnabled] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const activeAlias = runtime.data?.public_alias;
@@ -62,14 +131,31 @@ export function ChatPage() {
     model.deployments.some((deployment) => deployment.id === activeDeployment)
   ), [portfolio.data, activeDeployment]);
   const supportsImages = activeModel?.modalities.includes("image") ?? false;
+  const supportsTools = activeModel?.capabilities.includes("tools") ?? false;
+  const conversationImageCount = messages.reduce(
+    (count, message) => count + (message.attachments?.length ?? 0),
+    0,
+  );
+  const remainingImageSlots = Math.max(
+    0,
+    maximumConversationImages - conversationImageCount - attachments.length,
+  );
 
   async function attachFiles(files: FileList | null) {
     if (!files || !supportsImages) return;
-    const selected = [...files].slice(0, 4 - attachments.length);
+    if (remainingImageSlots === 0) {
+      setError("A conversation can include at most four images.");
+      return;
+    }
+    const candidates = [...files];
+    const selected = candidates.slice(0, remainingImageSlots);
+    if (candidates.length > remainingImageSlots) {
+      setError("A conversation can include at most four images.");
+    }
     const accepted: ChatAttachment[] = [];
     for (const file of selected) {
-      if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
-        setError("Images must be under 10 MiB and use a browser-supported image format.");
+      if (!supportedImageTypes.has(file.type) || file.size > 10 * 1024 * 1024) {
+        setError("Images must be PNG, JPEG, or WebP files no larger than 10 MiB.");
         continue;
       }
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -80,15 +166,27 @@ export function ChatPage() {
       });
       accepted.push({ id: createClientId(), name: file.name, mime_type: file.type, size: file.size, data_url: dataUrl });
     }
-    setAttachments((current) => [...current, ...accepted]);
+    setAttachments((current) => {
+      const available = Math.max(
+        0,
+        maximumConversationImages - conversationImageCount - current.length,
+      );
+      return [...current, ...accepted.slice(0, available)];
+    });
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const content = draft.trim();
     if ((!content && !attachments.length) || !activeAlias || !runtime.data?.ready || streaming) return;
+    if (messages.length + 2 > maximumConversationMessages) {
+      setError("This conversation reached the 64-message limit. Clear the session to start a new one.");
+      return;
+    }
+    const submittedDraft = draft;
+    const submittedAttachments = attachments;
     const userMessage: ChatMessage = {
-      id: createClientId(), role: "user", content, attachments, created_at: now(), deployment_id: activeDeployment ?? undefined,
+      id: createClientId(), role: "user", content, attachments: submittedAttachments, created_at: now(), deployment_id: activeDeployment ?? undefined,
     };
     const assistantId = createClientId();
     const assistant: ChatMessage = {
@@ -102,16 +200,37 @@ export function ChatPage() {
     setStreaming(true);
     const controller = new AbortController();
     abortRef.current = controller;
+    let assistantHasEvidence = false;
     try {
-      await streamChat(activeAlias, requestMessages, controller.signal, (update) => {
-        setMessages((current) => current.map((message) => message.id === assistantId
-          ? { ...message, content: update.content, tool_calls: update.toolCalls }
-          : message));
-      }, { temperature, maxTokens, systemPrompt });
+      if (toolsEnabled && supportsTools) {
+        await streamAgentTurn(requestMessages, controller.signal, (update) => {
+          assistantHasEvidence ||= Boolean(update.content || update.tools.length || update.sources.length);
+          setMessages((current) => current.map((message) => message.id === assistantId
+            ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources }
+            : message));
+        }, { temperature, maxTokens, systemPrompt, toolset: RESEARCH_TOOLSET });
+      } else {
+        await streamChat(activeAlias, requestMessages, controller.signal, (update) => {
+          assistantHasEvidence ||= Boolean(update.content || update.toolCalls.length);
+          setMessages((current) => current.map((message) => message.id === assistantId
+            ? { ...message, content: update.content, tool_calls: update.toolCalls }
+            : message));
+        }, { temperature, maxTokens, systemPrompt });
+      }
     } catch (reason) {
       if (!controller.signal.aborted) {
         setError(reason instanceof Error ? reason.message : "The model request failed.");
-        setMessages((current) => current.filter((message) => message.id !== assistantId || message.content));
+        if (!assistantHasEvidence) {
+          setMessages((current) => current.filter((message) =>
+            message.id !== userMessage.id && message.id !== assistantId
+          ));
+          setDraft((current) => current.trim() ? current : submittedDraft);
+          setAttachments((current) => current.length ? current : submittedAttachments);
+        } else {
+          setMessages((current) => current.filter((message) =>
+            message.id !== assistantId || message.content || message.tool_executions?.length || message.tool_calls?.length
+          ));
+        }
       }
     } finally {
       abortRef.current = null;
@@ -141,7 +260,7 @@ export function ChatPage() {
           <div className="welcome-card">
             <span className="orb"><BrainCircuit size={30} /></span>
             <h2>What are we working on?</h2>
-            <p>Messages remain in this browser session. The active deployment can stream text{supportsImages ? " and inspect images" : ""}; proposed tool calls are displayed but never executed automatically.</p>
+            <p>Messages remain in this browser session. The active deployment can stream text{supportsImages ? " and inspect images" : ""}. {supportsTools ? "Research tools are off by default; enabling them sends queries and requested public pages to the internet · no writes." : ""}</p>
             <div className="prompt-grid">
               {prompts.map(([label, prompt], index) => (
                 <button key={label} onClick={() => setDraft(prompt)}>
@@ -165,6 +284,8 @@ export function ChatPage() {
                   {message.attachments?.length ? <div className="message-images">{message.attachments.map((item) => <img src={item.data_url} alt={item.name} key={item.id} />)}</div> : null}
                   <div className="message-content">{message.content || (streaming ? <span className="typing">Thinking</span> : "")}</div>
                   {message.tool_calls?.map((tool) => <ToolCallCard key={tool.id} tool={tool} />)}
+                  {message.tool_executions?.map((tool) => <ToolExecutionCard key={tool.id} tool={tool} />)}
+                  <SourceList sources={message.sources ?? []} />
                 </div>
               </article>
             ))}
@@ -196,7 +317,32 @@ export function ChatPage() {
           <div>
             <label className={supportsImages ? "attach-button" : "attach-button disabled"} title={supportsImages ? "Attach images" : "This deployment does not support images"}>
               <ImagePlus size={17} /><span>Image</span>
-              <input type="file" accept="image/*" multiple disabled={!supportsImages} onChange={(event) => void attachFiles(event.target.files)} />
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                disabled={!supportsImages || remainingImageSlots === 0}
+                onChange={(event) => void attachFiles(event.target.files)}
+              />
+            </label>
+            <label
+              className={"tool-toggle " + (toolsEnabled && supportsTools ? "enabled " : "") + (!supportsTools ? "disabled" : "")}
+              title={supportsTools ? "Sends queries and requested public pages to the internet · no writes" : "This deployment does not support tools"}
+            >
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="Research tools"
+                checked={toolsEnabled && supportsTools}
+                disabled={!supportsTools || streaming}
+                onChange={(event) => setToolsEnabled(event.target.checked)}
+              />
+              <span className="toggle-track" aria-hidden="true"><span /></span>
+              <ShieldCheck size={15} />
+              <span className="tool-toggle-copy">
+                <strong>Research tools</strong>
+                <small>{supportsTools ? "Sends queries and requested public pages to the internet · no writes" : "Unavailable for this deployment"}</small>
+              </span>
             </label>
             <span className="composer-meta">Temperature {temperature} · Max {maxTokens}</span>
           </div>
@@ -210,7 +356,7 @@ export function ChatPage() {
         <div className="form-stack">
           <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} /></label>
           <label>Maximum output tokens<input type="number" min="1" max="8192" value={maxTokens} onChange={(event) => setMaxTokens(Math.max(1, Number(event.target.value)))} /></label>
-          <label>System prompt<textarea rows={5} value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} placeholder="Optional instructions for this session" /></label>
+          <label>System prompt<textarea rows={5} maxLength={maximumInstructionsLength} value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value.slice(0, maximumInstructionsLength))} placeholder="Optional instructions for this session" /></label>
           <button className="primary-button" onClick={() => setSettingsOpen(false)}>Apply settings</button>
         </div>
       </Modal>

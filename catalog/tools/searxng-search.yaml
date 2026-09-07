@@ -1,0 +1,119 @@
+# Declarative tool contracts are not loaded by llm_lab.catalog. Runtime
+# registration remains explicit; this file records the adapter's review contract.
+schema_version: 1
+kind: tool
+id: web_search
+contract_version: 1.0.0
+title: Search the public web with local SearXNG
+description: >-
+  Submit a bounded query to the loopback SearXNG JSON API and normalize ranked
+  public-web results with source URLs.
+lifecycle: reviewed-contract
+
+effects:
+  read_only: true
+  destructive: false
+  idempotent: true
+  open_world: true
+
+adapter:
+  protocol: searxng-json-http
+  base_url_environment: LLM_LAB_SEARXNG_URL
+  default_base_url: http://127.0.0.1:18888
+  method: GET
+  path: /search
+  fixed_parameters:
+    format: json
+  request_timeout_seconds: 12
+  execution_deadline_seconds: 20
+  maximum_response_bytes: 1048576
+  maximum_serialized_result_bytes: 61440
+  maximum_results: 10
+
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - query
+  properties:
+    query:
+      type: string
+      minLength: 1
+      maxLength: 500
+    max_results:
+      type: integer
+      minimum: 1
+      maximum: 10
+      default: 5
+
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - query
+    - results
+    - result_count
+  properties:
+    query:
+      type: string
+      maxLength: 500
+    results:
+      type: array
+      maxItems: 10
+      items:
+        type: object
+        additionalProperties: false
+        required:
+          - title
+          - url
+          - snippet
+        properties:
+          title:
+            type: string
+            maxLength: 500
+          url:
+            type: string
+            maxLength: 4096
+          snippet:
+            type: string
+            maxLength: 2000
+          published_at:
+            type: string
+            maxLength: 128
+    result_count:
+      type: integer
+      minimum: 0
+      maximum: 10
+
+mcp_projection:
+  name: web_search
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: true
+
+security:
+  base_url_policy:
+    schemes:
+      - http
+    host_class: loopback
+    explicit_port_required: true
+    paths:
+      - ""
+      - /search
+  response_url_schemes:
+    - http
+    - https
+  treats_output_as_untrusted_data: true
+  permits_arbitrary_url_fetch: false
+  permits_credentials: false
+  permits_local_network_targets: false
+  enforcement: central-adapter
+
+provenance:
+  deployment: deploy/research/searxng/compose.yaml
+  image: docker.io/searxng/searxng:2026.9.5-c7f3080aa
+  image_digest: sha256:55e1fa15a63ff04e79e213e6aa2837549877b0c6d60757cdb633ae9111cb5fea
+  upstream_revision: c7f3080aac5de13b619c4a5ab36590a2c5165e1c
+  reviewed_at: "2026-09-06"

@@ -1,0 +1,98 @@
+# Declarative tool contracts are review evidence. Runtime registration remains
+# explicit in the central adapter; placing a file here grants no authority.
+schema_version: 1
+kind: tool
+id: web_fetch
+contract_version: 1.0.0
+title: Fetch one public web document
+description: >-
+  Retrieve a bounded HTTP or HTTPS document through the native adapter, reject
+  private-network destinations, and return normalized text with provenance.
+lifecycle: reviewed-contract
+
+effects:
+  read_only: true
+  destructive: false
+  idempotent: true
+  open_world: true
+
+adapter:
+  protocol: native-python-http
+  request_timeout_seconds: 12
+  execution_deadline_seconds: 20
+  maximum_redirects: 3
+  maximum_response_bytes: 1048576
+  maximum_text_characters: 60000
+  maximum_serialized_result_bytes: 61440
+
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - url
+  properties:
+    url:
+      type: string
+      minLength: 1
+      maxLength: 4096
+
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - url
+    - status
+    - content_type
+    - title
+    - text
+    - truncated
+  properties:
+    url:
+      type: string
+      maxLength: 4096
+    status:
+      type: integer
+      minimum: 200
+      maximum: 299
+    content_type:
+      type: string
+      maxLength: 128
+    title:
+      type:
+        - string
+        - "null"
+      maxLength: 500
+    text:
+      type: string
+      maxLength: 60000
+    truncated:
+      type: boolean
+
+mcp_projection:
+  name: web_fetch
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: true
+
+security:
+  request_url_schemes:
+    - http
+    - https
+  reject_loopback: true
+  reject_link_local: true
+  reject_private_networks: true
+  reject_multicast: true
+  reject_network_metadata: true
+  revalidate_every_redirect: true
+  allowed_destination_ports:
+    - 80
+    - 443
+  treats_output_as_untrusted_data: true
+  permits_credentials: false
+  enforcement: central-adapter
+
+provenance:
+  implementation: src/llm_lab/tooling/builtins.py
+  reviewed_at: "2026-09-06"

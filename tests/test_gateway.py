@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import socket
 from pathlib import Path
 
 import httpx
 import pytest
+import llm_lab.gateway as gateway_module
 
 from llm_lab.attestation import verify_gateway_attestation
 from llm_lab.benchmark import BenchmarkRunner
@@ -80,6 +82,131 @@ async def test_inactive_gateway_returns_clear_503(tmp_path: Path) -> None:
     assert response.json()["error"]["message"] == "No active model deployment"
     assert health.status_code == 200
     assert health.json()["active"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_owned_upstream_client_ignores_proxy_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _paths(tmp_path)
+    _publish_external_state(paths)
+    real_client = httpx.AsyncClient
+    constructed: list[dict] = []
+    backend = create_mock_app("local-test")
+
+    def client_factory(*args, **kwargs):
+        del args
+        constructed.append(dict(kwargs))
+        kwargs["transport"] = httpx.ASGITransport(app=backend)
+        kwargs["base_url"] = "http://backend.invalid"
+        return real_client(**kwargs)
+
+    monkeypatch.setattr(gateway_module.httpx, "AsyncClient", client_factory)
+    app = create_app(paths, enable_console=False)
+    try:
+        async with real_client(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://gateway.invalid",
+        ) as client:
+            response = await client.get("/v1/models")
+    finally:
+        if app.state.upstream_client is not None:
+            await app.state.upstream_client.aclose()
+
+    assert response.status_code == 200
+    assert constructed[0]["trust_env"] is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_does_not_echo_upstream_connection_details(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    paths = _paths(tmp_path)
+    _publish_external_state(paths)
+
+    async def fail(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(
+            "SENSITIVE socket path and proxy details",
+            request=request,
+        )
+
+    upstream = httpx.AsyncClient(transport=httpx.MockTransport(fail))
+    app = create_app(paths, client=upstream, enable_console=False)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://gateway.invalid",
+        ) as client:
+            response = await client.get("/v1/models")
+    finally:
+        await upstream.aclose()
+
+    assert response.status_code == 502
+    assert response.json()["error"]["message"] == "Active backend is unreachable"
+    assert "SENSITIVE" not in response.text
+    assert "SENSITIVE" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_gateway_rejects_dns_rebinding_hosts_and_accepts_reviewed_hosts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LLM_LAB_ALLOWED_HOSTS", raising=False)
+    app = create_app(_paths(tmp_path), enable_console=False)
+    consumed = False
+
+    async def hostile_body():
+        nonlocal consumed
+        consumed = True
+        yield b"x" * 2048
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://gateway.invalid",
+    ) as client:
+        reserved_test = await client.get("/health")
+        local = await client.get("/health", headers={"Host": "127.0.0.1:18080"})
+        machine = await client.get(
+            "/health", headers={"Host": f"{socket.gethostname()}:5173"}
+        )
+        rejected = await client.get(
+            "/health", headers={"Host": "attacker.example"}
+        )
+        rejected_before_body = await client.post(
+            "/api/v1/agent/turns",
+            content=hostile_body(),
+            headers={
+                "Content-Type": "application/json",
+                "Host": "attacker.example",
+            },
+        )
+
+    assert reserved_test.status_code == local.status_code == machine.status_code == 200
+    assert rejected.status_code == 400
+    assert rejected.json()["error"]["type"] == "invalid_host"
+    assert rejected_before_body.status_code == 400
+    assert consumed is False
+
+
+@pytest.mark.asyncio
+async def test_gateway_allows_explicit_reviewed_proxy_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_LAB_ALLOWED_HOSTS", "proxy.example,localhost")
+    app = create_app(_paths(tmp_path), enable_console=False)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://gateway.invalid",
+    ) as client:
+        accepted = await client.get("/health", headers={"Host": "proxy.example"})
+        rejected = await client.get("/health", headers={"Host": "kalman"})
+
+    assert accepted.status_code == 200
+    if socket.gethostname() != "proxy.example":
+        assert rejected.status_code == 400
 
 
 @pytest.mark.asyncio

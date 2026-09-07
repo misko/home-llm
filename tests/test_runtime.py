@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -10,6 +11,9 @@ from pathlib import Path
 
 import httpx
 import pytest
+import psutil
+
+import llm_lab.runtime as runtime_module
 
 from llm_lab.errors import DeploymentError, StoragePolicyError
 from llm_lab.paths import LabPaths
@@ -153,6 +157,94 @@ def test_activate_status_stop_publishes_resolved_state(tmp_path: Path) -> None:
     assert stopped is not None and stopped.deployment_id == "mock-one"
     assert read_active_state(paths) is None
     assert manager.stop() is None
+
+
+def test_process_stop_treats_zombie_only_group_as_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process_group = 4242
+    signals: list[tuple[int, int]] = []
+
+    class ZombieLeader:
+        pid = process_group
+        info = {"pid": process_group, "status": psutil.STATUS_ZOMBIE}
+
+        def is_running(self) -> bool:
+            return True
+
+        def status(self) -> str:
+            return psutil.STATUS_ZOMBIE
+
+        def wait(self, timeout: float = 0) -> int:
+            assert timeout == 0
+            return 0
+
+    class InaccessibleUnrelatedProcess:
+        info = {"pid": process_group - 1, "status": None}
+
+    leader = ZombieLeader()
+    record = LaunchRecord(
+        kind="process",
+        command=("/reviewed/server",),
+        started_at="2026-09-06T00:00:00+00:00",
+        pid=process_group,
+        process_create_time=123.0,
+    )
+    monkeypatch.setattr(runtime_module, "_recorded_process", lambda _: leader)
+    monkeypatch.setattr(
+        runtime_module.psutil,
+        "process_iter",
+        lambda **_: iter((InaccessibleUnrelatedProcess(), leader)),
+    )
+
+    def process_group_for(pid: int) -> int:
+        if pid == process_group - 1:
+            raise PermissionError("unrelated protected process")
+        return process_group
+
+    monkeypatch.setattr(runtime_module.os, "getpgid", process_group_for)
+    monkeypatch.setattr(
+        runtime_module.os,
+        "killpg",
+        lambda pgid, sent_signal: signals.append((pgid, sent_signal)),
+    )
+
+    launcher = ProcessLauncher()
+    assert launcher.is_running(record) is False
+    launcher.stop(record, timeout_seconds=0.01)
+
+    # Signal-zero deliberately succeeds for the zombie group. Liveness comes
+    # from member state, so stop does not wait or escalate to SIGKILL.
+    assert (process_group, 0) in signals
+    assert (process_group, signal.SIGTERM) in signals
+    assert (process_group, signal.SIGKILL) not in signals
+
+
+def test_zombie_group_leader_does_not_hide_live_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process_group = 4343
+
+    class Member:
+        def __init__(self, pid: int, status: str) -> None:
+            self.info = {"pid": pid, "status": status}
+
+        def status(self) -> str:
+            return str(self.info["status"])
+
+    members = (
+        Member(process_group, psutil.STATUS_ZOMBIE),
+        Member(process_group + 1, psutil.STATUS_SLEEPING),
+    )
+    monkeypatch.setattr(runtime_module.os, "killpg", lambda *_: None)
+    monkeypatch.setattr(runtime_module.os, "getpgid", lambda _: process_group)
+    monkeypatch.setattr(
+        runtime_module.psutil,
+        "process_iter",
+        lambda **_: iter(members),
+    )
+
+    assert runtime_module._process_group_exists(process_group) is True
 
 
 def test_verify_runtime_lock_binds_recipe_path_bytes_and_version(

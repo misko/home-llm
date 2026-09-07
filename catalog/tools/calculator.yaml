@@ -1,0 +1,64 @@
+# Declarative tool contracts are review evidence. Runtime registration remains
+# explicit in the central adapter; placing a file here grants no authority.
+schema_version: 1
+kind: tool
+id: calculator
+contract_version: 1.0.0
+title: Evaluate bounded arithmetic
+description: >-
+  Evaluate a bounded arithmetic expression with a restricted parser and no
+  names, attribute access, imports, filesystem access, network access, or eval.
+lifecycle: reviewed-contract
+
+effects:
+  read_only: true
+  destructive: false
+  idempotent: true
+  open_world: false
+
+adapter:
+  protocol: native-python-expression
+  execution_deadline_seconds: 20
+  maximum_expression_characters: 256
+
+input_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - expression
+  properties:
+    expression:
+      type: string
+      minLength: 1
+      maxLength: 256
+
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - expression
+    - result
+  properties:
+    expression:
+      type: string
+      maxLength: 256
+    result:
+      type: number
+
+mcp_projection:
+  name: calculator
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: true
+    openWorldHint: false
+
+security:
+  arbitrary_code_execution: false
+  network_access: false
+  filesystem_access: false
+  enforcement: central-adapter
+
+provenance:
+  implementation: src/llm_lab/tooling/builtins.py
+  reviewed_at: "2026-09-06"

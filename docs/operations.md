@@ -248,7 +248,7 @@ Start the stable gateway in a second terminal. Supplying a key enables bearer
 authentication for all `/v1/*` routes:
 
 ```bash
-LLM_LAB_API_KEY="replace-with-a-secret" \
+LLM_LAB_GATEWAY_API_KEY="replace-with-a-secret" \
   uv run llmctl serve gateway --host 127.0.0.1 --port 14000
 ```
 

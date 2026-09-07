@@ -1,0 +1,19 @@
+# This file extends the defaults built into the image pinned in compose.yaml.
+# Keep it small so upstream defaults remain reviewable during version updates.
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: LLM Lab Research
+
+search:
+  # JSON is disabled in the upstream default. The local adapter depends on it.
+  formats:
+    - html
+    - json
+
+server:
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: GET

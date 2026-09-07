@@ -1,0 +1,67 @@
+# Declarative tool contracts are review evidence. Runtime registration remains
+# explicit in the central adapter; placing a file here grants no authority.
+schema_version: 1
+kind: tool
+id: current_time
+contract_version: 1.0.0
+title: Read the current time
+description: >-
+  Return the current wall-clock time in UTC or a named IANA time zone using the
+  host's reviewed time-zone database.
+lifecycle: reviewed-contract
+
+effects:
+  read_only: true
+  destructive: false
+  idempotent: false
+  open_world: false
+
+adapter:
+  protocol: native-python-clock
+  execution_deadline_seconds: 20
+
+input_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    timezone:
+      type: string
+      minLength: 1
+      maxLength: 64
+      default: UTC
+
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - timezone
+    - iso8601
+    - utc_offset
+  properties:
+    timezone:
+      type: string
+      maxLength: 64
+    iso8601:
+      type: string
+      maxLength: 128
+    utc_offset:
+      type: string
+      maxLength: 16
+
+mcp_projection:
+  name: current_time
+  annotations:
+    readOnlyHint: true
+    destructiveHint: false
+    idempotentHint: false
+    openWorldHint: false
+
+security:
+  network_access: false
+  filesystem_write: false
+  enforcement: central-adapter
+
+provenance:
+  implementation: src/llm_lab/tooling/builtins.py
+  time_source: host-system-clock
+  reviewed_at: "2026-09-06"

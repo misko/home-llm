@@ -1,0 +1,71 @@
+# Toolsets are review evidence until a strict manifest loader is implemented.
+# Runtime registration is explicit; membership here grants no authority.
+schema_version: 1
+kind: toolset
+id: standard-readonly
+contract_version: 1.0.0
+title: Standard read-only research
+description: >-
+  Bounded discovery, document retrieval, arithmetic, and clock tools. Open-web
+  output remains attributable, tainted, and untrusted.
+lifecycle: reviewed-contract
+
+tools:
+  - id: web_search
+    contract_version: 1.0.0
+    implementation: searxng-json-http
+    required: true
+  - id: web_fetch
+    contract_version: 1.0.0
+    implementation: native-python-http
+    required: true
+  - id: calculator
+    contract_version: 1.0.0
+    implementation: native-python-expression
+    required: true
+  - id: current_time
+    contract_version: 1.0.0
+    implementation: native-python-clock
+    required: true
+
+policy:
+  allowed_effects:
+    - read_only
+  maximum_calls_per_round: 4
+  tool_calls_execute_serially: true
+  maximum_rounds: 6
+  maximum_concurrent_turns: 1
+  maximum_queued_turns: 1
+  tool_call_deadline_seconds: 20
+  model_round_deadline_seconds: 120
+  total_turn_deadline_seconds: 180
+  maximum_reserved_generation_tokens: 32768
+  maximum_model_round_response_bytes: 2097152
+  maximum_assistant_characters: 262144
+  require_source_urls_for_open_world_results: true
+  external_content_is_untrusted: true
+  deny_capabilities:
+    - account_mutation
+    - arbitrary_code_execution
+    - credential_access
+    - filesystem_write
+    - messaging
+    - payment
+    - shell
+
+observability:
+  invocation_events:
+    - run_id
+    - sequence
+    - call_id
+    - name
+    - round
+    - duration_ms
+    - outcome_event
+  caller_visible_results: bounded-by-schema-and-serialized-size
+  caller_visible_arguments: bounded-and-sensitive-key-redacted
+  server_persistence: none
+  recommended_downstream_query_persistence: do-not-persist-by-default
+  recommended_downstream_result_persistence: do-not-persist-by-default
+
+enforcement: central-adapter

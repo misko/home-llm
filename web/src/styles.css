@@ -280,16 +280,56 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .tool-call-card { margin-top: 12px; border: 1px solid #2b3e57; border-radius: 8px; background: rgba(30,65,112,.11); }
 .tool-call-card summary { padding: 10px 12px; display: flex; align-items: center; gap: 8px; color: #bcd6f7; cursor: pointer; font-size: 13px; }
 .tool-call-card pre { max-height: 280px; margin: 0; padding: 12px; overflow: auto; border-top: 1px solid #26374c; color: #a8bdd8; font-size: 12px; white-space: pre-wrap; }
+.tool-execution-card { margin-top: 11px; overflow: hidden; border: 1px solid #2b3e57; border-radius: 9px; background: rgba(23,49,83,.16); }
+.tool-execution-card.running { border-color: rgba(105,169,255,.32); }
+.tool-execution-card.completed { border-color: rgba(82,220,162,.22); background: rgba(33,111,79,.07); }
+.tool-execution-card.failed { border-color: rgba(255,120,133,.26); background: rgba(136,42,52,.07); }
+.tool-execution-card summary { min-height: 48px; padding: 9px 12px; display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; }
+.tool-execution-card summary::-webkit-details-marker { display: none; }
+.tool-icon { width: 28px; height: 28px; display: grid; place-items: center; flex: 0 0 auto; color: #bfd9ff; border: 1px solid #304c70; border-radius: 7px; background: rgba(43,116,215,.13); }
+.tool-identity { min-width: 0; display: grid; gap: 2px; }
+.tool-identity strong { overflow: hidden; color: #dbeaff; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.tool-identity small { color: var(--subtle); font-size: 10px; }
+.tool-status { margin-left: auto; padding: 4px 7px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid; border-radius: 99px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.tool-status.running { color: #bcd7ff; border-color: rgba(105,169,255,.25); background: rgba(105,169,255,.08); }
+.tool-status.completed { color: #aef0d1; border-color: rgba(82,220,162,.22); background: rgba(82,220,162,.07); }
+.tool-status.failed { color: #ffc0c6; border-color: rgba(255,120,133,.24); background: rgba(255,120,133,.07); }
+.tool-execution-detail { padding: 3px 12px 12px 50px; display: grid; gap: 10px; border-top: 1px solid rgba(255,255,255,.04); }
+.tool-execution-detail > div { min-width: 0; padding-top: 9px; }
+.tool-execution-detail span { color: var(--subtle); font: 700 9px "SFMono-Regular", Consolas, monospace; letter-spacing: .07em; text-transform: uppercase; }
+.tool-execution-detail pre { max-height: 220px; margin: 6px 0 0; overflow: auto; color: #9db2cc; font-size: 11px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-execution-detail .tool-error p { margin: 6px 0 0; color: #ffc0c6; font-size: 12px; }
+.source-list { margin-top: 15px; padding: 13px; border: 1px solid #25374e; border-radius: 9px; background: rgba(10,17,27,.55); }
+.source-list h3 { margin: 0 0 9px; color: #8ea6c4; font: 700 10px "SFMono-Regular", Consolas, monospace; letter-spacing: .09em; text-transform: uppercase; }
+.source-list ol { margin: 0; padding-left: 24px; display: grid; gap: 6px; color: #73849a; }
+.source-list a { padding: 7px 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #bdd8fb; border-radius: 7px; text-decoration: none; }
+.source-list a:hover { background: rgba(105,169,255,.07); color: #e5f1ff; }
+.source-list a > span { min-width: 0; display: grid; gap: 3px; }
+.source-list a strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.source-list a small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.source-list a > svg { flex: 0 0 auto; }
 .composer { overflow: hidden; border: 1px solid #2b394d; border-radius: var(--radius); background: rgba(14,20,29,.94); box-shadow: 0 24px 70px rgba(0,0,0,.28); }
 .composer textarea { width: 100%; min-height: 84px; resize: vertical; padding: 18px; color: var(--text); border: 0; outline: 0; background: transparent; font-size: 16px; line-height: 1.5; }
 .composer textarea::placeholder { color: #64748a; }
 .composer-bar { padding: 10px 11px 11px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(255,255,255,.04); }
-.composer-bar > div { display: flex; align-items: center; gap: 12px; }
+.composer-bar > div { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .composer-meta { color: #708096; font: 11px "SFMono-Regular", Consolas, monospace; }
 .attach-button { padding: 6px 8px; display: inline-flex; align-items: center; gap: 5px; color: #aabbd1; border-radius: 7px; cursor: pointer; font-size: 12px; }
 .attach-button:hover { background: rgba(255,255,255,.04); }
 .attach-button.disabled { opacity: .35; cursor: not-allowed; }
 .attach-button input { display: none; }
+.tool-toggle { position: relative; padding: 5px 8px 5px 5px; display: inline-flex; align-items: center; gap: 6px; color: #91a1b5; border: 1px solid transparent; border-radius: 7px; cursor: pointer; font-size: 11px; text-align: left; transition: color .15s, border-color .15s, background .15s; }
+.tool-toggle.enabled { color: #bfe1ff; border-color: rgba(105,169,255,.15); background: rgba(105,169,255,.055); }
+.tool-toggle.disabled { opacity: .4; cursor: not-allowed; }
+.tool-toggle input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.toggle-track { width: 25px; height: 15px; padding: 2px; display: block; flex: 0 0 auto; border: 1px solid #3a485b; border-radius: 99px; background: #121924; transition: border-color .15s, background .15s; }
+.toggle-track > span { width: 9px; height: 9px; display: block; border-radius: 50%; background: #78869a; transition: transform .15s, background .15s; }
+.tool-toggle input:checked + .toggle-track { border-color: #397dce; background: rgba(42,119,219,.28); }
+.tool-toggle input:checked + .toggle-track > span { transform: translateX(10px); background: #8ec2ff; }
+.tool-toggle input:focus-visible + .toggle-track { outline: 2px solid var(--blue); outline-offset: 2px; }
+.tool-toggle-copy { display: grid; gap: 1px; }
+.tool-toggle-copy strong { color: inherit; font-size: 11px; }
+.tool-toggle-copy small { max-width: 390px; color: #62748b; font-size: 9px; line-height: 1.3; }
 .attachment-tray { padding: 8px 2px; display: flex; flex-wrap: wrap; gap: 7px; }
 .attachment-tray > span { padding: 6px 8px; display: inline-flex; align-items: center; gap: 5px; color: #b9c9db; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); font-size: 12px; }
 .attachment-tray button, .inline-error button { padding: 0; display: grid; place-items: center; color: inherit; border: 0; background: none; }

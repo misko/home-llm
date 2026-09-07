@@ -134,7 +134,7 @@ address while resolving the ready active deployment for every request. In one
 terminal, after activating `local-general`, start it with optional bearer auth:
 
 ```bash
-LLM_LAB_API_KEY="replace-with-a-secret" \
+LLM_LAB_GATEWAY_API_KEY="replace-with-a-secret" \
   uv run llmctl serve gateway --host 127.0.0.1 --port 14000
 ```
 
@@ -157,6 +157,48 @@ The gateway passes through `/v1/models`, `/v1/chat/completions`,
 `/health` endpoint remains available without a bearer token. It does not provide
 TLS, and direct backend ports do not gain gateway authentication; keep both on
 loopback or put a reviewed TLS proxy and firewall in front.
+
+The gateway rejects unreviewed `Host` headers to prevent DNS-rebinding access.
+Loopback names and the machine hostname are accepted by default. When a reviewed
+reverse proxy uses another hostname, set the complete comma-separated allowlist
+with `LLM_LAB_ALLOWED_HOSTS` (for example,
+`localhost,127.0.0.1,llm.example.internal`). Host validation is not a user
+authentication boundary; remote deployments still need an authenticated TLS
+proxy and an explicit origin/session policy.
+
+The raw `/v1/*` routes remain caller-managed. For server-managed tools, the
+gateway also exposes `POST /api/v1/agent/turns` as a typed SSE stream and
+`GET /api/v1/agent/toolsets` as the reviewed tool catalog. The initial
+`standard-readonly` toolset contains `web_search`, `web_fetch`, `calculator`,
+and `current_time`; it applies strict schemas, deadlines, byte/token/round
+budgets, source-URL provenance, and open-world chaining controls outside the
+model. `web_search` uses the loopback SearXNG service configured by
+`LLM_LAB_SEARXNG_URL`, which defaults to `http://127.0.0.1:18888`.
+The shipped limits allow one running and one queued agent turn, six model
+rounds, and four serial tool calls per round. A turn has a 180-second deadline;
+each tool call has a 20-second deadline. Web requests additionally have a
+12-second HTTP timeout, a 1 MiB upstream-response cap, and a 60 KiB normalized
+result cap. Source URLs are retained in tool events and console source cards;
+this first version does not reject otherwise valid assistant text solely for
+omitting an inline citation.
+
+```bash
+curl --no-buffer --fail-with-body http://127.0.0.1:14000/api/v1/agent/turns \
+  -H 'Authorization: Bearer replace-with-a-secret' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "messages": [{"role": "user", "content": "Search for the SearXNG documentation."}],
+    "toolset": "standard-readonly",
+    "temperature": 0,
+    "max_tokens": 1024
+  }'
+```
+
+Caller messages must start and end with `user` and strictly alternate with
+`assistant`. Optional session guidance belongs in the bounded `instructions`
+field; callers cannot inject system or tool-role messages. The agent endpoint
+accepts inline PNG/JPEG/WebP data URLs only, while the raw `/v1` contract keeps
+its existing caller-managed multimodal behavior.
 
 ## Web console
 
@@ -187,7 +229,7 @@ npm --prefix web run dev
 Port 5173 has no login boundary and exposes lifecycle operations to every host
 that can reach it. Use it only on a trusted, firewalled network. The browser
 console does not currently implement a bearer-token login flow, so setting
-`LLM_LAB_API_KEY` protects `/api/v1/*` but makes interactive console calls
+`LLM_LAB_GATEWAY_API_KEY` protects `/api/v1/*` but makes interactive console calls
 unauthorized. For shared or untrusted networks, put an authenticated TLS/session
 proxy in front rather than exposing Vite or the gateway directly.
 
@@ -231,6 +273,8 @@ not time-to-first-token (TTFT), which this non-streaming runner does not measure
 ## Documentation
 
 - [Architecture and invariants](docs/architecture.md)
+- [Central agent and reviewed tool-extension architecture](docs/agent-tool-architecture.md)
+- [Pinned local SearXNG research deployment](deploy/research/searxng/README.md)
 - [Installation, storage, serving, benchmarking, rollback, and recovery](docs/operations.md)
 - [Executable acceptance checklist](docs/acceptance.md)
 - [Verified RTX 4090 deployment evidence (2026-09-03)](docs/verification-2026-09-03.md)

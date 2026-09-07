@@ -192,6 +192,8 @@ export interface ChatMessage {
   deployment_id?: string;
   created_at: string;
   tool_calls?: ToolCall[];
+  tool_executions?: AgentToolExecution[];
+  sources?: AgentSource[];
   attachments?: ChatAttachment[];
 }
 
@@ -207,4 +209,27 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: string;
+}
+
+export type AgentToolStatus = "running" | "completed" | "failed";
+
+export interface AgentToolError {
+  code?: string;
+  message: string;
+  retryable?: boolean;
+}
+
+export interface AgentToolExecution {
+  id: string;
+  name: string;
+  arguments?: unknown;
+  status: AgentToolStatus;
+  result?: unknown;
+  error?: AgentToolError;
+}
+
+export interface AgentSource {
+  title: string;
+  url: string;
+  snippet?: string;
 }

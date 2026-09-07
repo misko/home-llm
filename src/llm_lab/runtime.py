@@ -1037,10 +1037,66 @@ def _recorded_process(record: LaunchRecord) -> psutil.Process | None:
 
 
 def _process_group_exists(process_group: int) -> bool:
-    """Return whether a positive process group still has any members."""
+    """Return whether a positive process group has a live member.
+
+    ``killpg(pgid, 0)`` also succeeds when the group's only remaining members
+    are zombies. Zombies cannot run or retain the GPU, so treating that result
+    alone as liveness makes stop wait through SIGKILL and fail indefinitely
+    until their parent reaps them. Confirm the group contains at least one
+    non-zombie process while retaining the signal-zero permission/existence
+    check as a fast path.
+    """
 
     if process_group <= 0:
         return False
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+
+    saw_group_member = False
+    terminal_statuses = {
+        psutil.STATUS_ZOMBIE,
+        getattr(psutil, "STATUS_DEAD", "dead"),
+    }
+    try:
+        processes = psutil.process_iter(attrs=("pid", "status"))
+        for process in processes:
+            try:
+                pid = int(process.info["pid"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            try:
+                member_group = os.getpgid(pid)
+            except ProcessLookupError:
+                continue
+            except (PermissionError, OSError):
+                # Membership is unknown, so this may be an unrelated protected
+                # process. If no target member can be inspected, the final
+                # kernel re-check below still fails closed.
+                continue
+            if member_group != process_group:
+                continue
+            try:
+                status = process.info.get("status") or process.status()
+            except psutil.NoSuchProcess:
+                continue
+            except (psutil.Error, OSError):
+                # Membership was confirmed. An unreadable state must remain
+                # conservatively live rather than hiding a target worker.
+                return True
+            saw_group_member = True
+            if status not in terminal_statuses:
+                return True
+    except (psutil.Error, OSError):
+        return True
+
+    if saw_group_member:
+        return False
+    # The group changed while it was enumerated, or this process cannot see its
+    # members. Re-check the kernel and fail closed if it still reports a group.
     try:
         os.killpg(process_group, 0)
     except ProcessLookupError:
