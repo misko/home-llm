@@ -33,12 +33,20 @@ def _gateway_url() -> str:
     parsed = urlsplit(raw)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ToolError("LLM_LAB_GATEWAY_URL must be an HTTP(S) URL")
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address | None
     try:
-        is_loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+        address = ipaddress.ip_address(parsed.hostname)
+        is_loopback = address.is_loopback
     except ValueError:
+        address = None
         is_loopback = parsed.hostname == "localhost"
     if parsed.scheme == "http" and not is_loopback:
-        raise ToolError("Plain HTTP LLM Lab gateways must use a loopback address")
+        insecure_lan_enabled = os.environ.get("LLM_LAB_ALLOW_INSECURE_LAN") == "1"
+        if not (insecure_lan_enabled and address is not None and address.is_private):
+            raise ToolError(
+                "Plain HTTP LLM Lab gateways must use loopback, or a literal "
+                "private address with LLM_LAB_ALLOW_INSECURE_LAN=1"
+            )
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ToolError("LLM_LAB_GATEWAY_URL must not contain credentials or query data")
     return raw

@@ -55,3 +55,16 @@ def test_gateway_rejects_non_loopback_plain_http(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("LLM_LAB_GATEWAY_URL", "http://llm.example.test:14000")
     with pytest.raises(ToolError, match="loopback"):
         _gateway_url()
+
+
+def test_gateway_allows_opted_in_private_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_LAB_GATEWAY_URL", "http://192.168.1.141:14000")
+    monkeypatch.setenv("LLM_LAB_ALLOW_INSECURE_LAN", "1")
+    assert _gateway_url() == "http://192.168.1.141:14000"
+
+
+def test_gateway_rejects_opted_in_public_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_LAB_GATEWAY_URL", "http://8.8.8.8:14000")
+    monkeypatch.setenv("LLM_LAB_ALLOW_INSECURE_LAN", "1")
+    with pytest.raises(ToolError, match="loopback"):
+        _gateway_url()

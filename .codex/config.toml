@@ -5,6 +5,7 @@ env_vars = [
   "LLM_LAB_GATEWAY_URL",
   "LLM_LAB_GATEWAY_API_KEY",
   "LLM_LAB_CODEX_MODEL",
+  "LLM_LAB_ALLOW_INSECURE_LAN",
 ]
 enabled_tools = ["ask_local_llm"]
 default_tools_approval_mode = "approve"
