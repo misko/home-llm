@@ -176,6 +176,20 @@ and `current_time`; it applies strict schemas, deadlines, byte/token/round
 budgets, source-URL provenance, and open-world chaining controls outside the
 model. `web_search` uses the loopback SearXNG service configured by
 `LLM_LAB_SEARXNG_URL`, which defaults to `http://127.0.0.1:18888`.
+
+### Codex integration
+
+The project-scoped `.codex/config.toml` registers an `ask_local_llm` MCP tool.
+New Codex sessions opened from this repository can send bounded analysis,
+summarization, brainstorming, and review tasks to the active local deployment
+while Codex remains responsible for repository access, tool use, and final
+verification. The MCP server discovers the active model through `/health` and
+calls the stable `/v1/chat/completions` gateway route.
+
+Run `codex mcp list` to verify discovery. If the gateway uses bearer
+authentication, export `LLM_LAB_GATEWAY_API_KEY` before starting Codex. Optional
+`LLM_LAB_GATEWAY_URL` and `LLM_LAB_CODEX_MODEL` variables override the default
+loopback gateway and active model selection.
 The shipped limits allow one running and one queued agent turn, six model
 rounds, and four serial tool calls per round. `max_tokens` defaults to 32,000
 when omitted and accepts values from 1 through 32,768. This value is a per-round

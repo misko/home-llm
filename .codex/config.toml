@@ -1,0 +1,16 @@
+[mcp_servers.local_llm]
+command = "uv"
+args = ["run", "python", "-m", "llm_lab.codex_mcp"]
+env_vars = [
+  "LLM_LAB_GATEWAY_URL",
+  "LLM_LAB_GATEWAY_API_KEY",
+  "LLM_LAB_CODEX_MODEL",
+]
+enabled_tools = ["ask_local_llm"]
+default_tools_approval_mode = "approve"
+startup_timeout_sec = 20
+tool_timeout_sec = 300
+
+[mcp_servers.local_llm.tools.ask_local_llm]
+approval_mode = "approve"
+output_token_limit = 10000
