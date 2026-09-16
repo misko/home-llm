@@ -39,7 +39,7 @@ policy:
   tool_call_deadline_seconds: 20
   model_round_deadline_seconds: 120
   total_turn_deadline_seconds: 180
-  maximum_reserved_generation_tokens: 32768
+  maximum_reserved_generation_tokens: 196608
   maximum_model_round_response_bytes: 2097152
   maximum_assistant_characters: 262144
   require_source_urls_for_open_world_results: true

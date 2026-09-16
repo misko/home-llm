@@ -1,0 +1,14 @@
+[
+  {"partition":"development","messages":[{"role":"user","content":"In Linux process management, what does SIGTERM ask a process to do? Answer in one short sentence."}],"reference":"SIGTERM asks a process to terminate."},
+  {"partition":"development","messages":[{"role":"user","content":"In chess terminology, what does it mean for a king to be in check? Answer in one short sentence."}],"reference":"A king in check is under attack by an opposing piece."},
+  {"partition":"development","messages":[{"role":"user","content":"What does Python's list.pop method do when called without an index? Answer in one short sentence."}],"reference":"Calling list.pop without an index removes and returns the last element."},
+  {"partition":"development","messages":[{"role":"user","content":"What does a database rollback do to uncommitted changes? Answer in one short sentence."}],"reference":"A rollback undoes uncommitted changes."},
+  {"partition":"development","messages":[{"role":"user","content":"What is the purpose of a software unit test? Answer in one short sentence."}],"reference":"A unit test checks the behavior of a small part of a program."},
+  {"partition":"development","messages":[{"role":"user","content":"What does a read-only file permission prevent? Answer in one short sentence."}],"reference":"Read-only permission prevents modifying the file."},
+  {"partition":"development","messages":[{"role":"user","content":"In a fictional inventory, the last blue widget was removed. Are any blue widgets left? Answer in one short sentence."}],"reference":"No blue widgets remain in the inventory."},
+  {"partition":"development","messages":[{"role":"user","content":"In a fictional timetable, the train leaves at noon and arrives an hour later. When does it arrive? Answer in one short sentence."}],"reference":"The train arrives at one in the afternoon."},
+  {"partition":"development","messages":[{"role":"user","content":"What happens to ice when it melts? Answer in one short sentence."}],"reference":"When ice melts, it becomes liquid water."},
+  {"partition":"development","messages":[{"role":"user","content":"What does a thermometer measure? Answer in one short sentence."}],"reference":"A thermometer measures temperature."},
+  {"partition":"development","messages":[{"role":"user","content":"What is the role of a dictionary key in looking up a value? Answer in one short sentence."}],"reference":"A dictionary key identifies the value to retrieve."},
+  {"partition":"development","messages":[{"role":"user","content":"A fictional record gives a project's name but no launch date. Can its launch date be determined from that record? Answer in one short sentence."}],"reference":"The launch date cannot be determined from the record."}
+]

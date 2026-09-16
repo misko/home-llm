@@ -534,7 +534,9 @@ class ArtifactStore:
         if not root.is_dir():
             raise IntegrityError(f"resolved artifact tree is not a directory: {root}")
 
-        matches_by_path: dict[str, tuple[Path, Any, bool]] = {}
+        matches_by_path: dict[
+            str, tuple[Path, Any, bool, int | None, str | None]
+        ] = {}
         for selector in selectors:
             _validate_pattern(selector.pattern)
             matches = sorted(
@@ -562,13 +564,42 @@ class ArtifactStore:
                         f"{previous[1].value!r} and {selector.role.value!r}"
                     )
                 required = selector.required or (previous[2] if previous else False)
-                matches_by_path[logical] = (path, selector.role, required)
+                expected_size = selector.expected_size_bytes
+                expected_sha256 = selector.expected_sha256
+                if previous is not None:
+                    if (
+                        previous[3] is not None
+                        and expected_size is not None
+                        and previous[3] != expected_size
+                    ) or (
+                        previous[4] is not None
+                        and expected_sha256 is not None
+                        and previous[4] != expected_sha256
+                    ):
+                        raise CatalogError(
+                            f"artifact file {logical!r} has conflicting expected content"
+                        )
+                    expected_size = expected_size or previous[3]
+                    expected_sha256 = expected_sha256 or previous[4]
+                matches_by_path[logical] = (
+                    path,
+                    selector.role,
+                    required,
+                    expected_size,
+                    expected_sha256,
+                )
 
         if not matches_by_path:
             raise IntegrityError(f"artifact selectors matched no files under {root}")
 
         selected: list[_SelectedFile] = []
-        for logical, (path, role, required) in sorted(matches_by_path.items()):
+        for logical, (
+            path,
+            role,
+            required,
+            expected_size,
+            expected_sha256,
+        ) in sorted(matches_by_path.items()):
             source = path.resolve(strict=True)
             before = source.stat()
             if not stat.S_ISREG(before.st_mode):
@@ -589,6 +620,16 @@ class ArtifactStore:
             )
             if before_identity != after_identity:
                 raise IntegrityError(f"artifact file changed while hashing: {path}")
+            if expected_size is not None and after.st_size != expected_size:
+                raise IntegrityError(
+                    f"artifact file {logical!r} is {after.st_size} bytes; "
+                    f"catalog expected {expected_size}"
+                )
+            if expected_sha256 is not None and digest != expected_sha256:
+                raise IntegrityError(
+                    f"artifact file {logical!r} has SHA-256 {digest}; "
+                    f"catalog expected {expected_sha256}"
+                )
             selected.append(
                 _SelectedFile(
                     logical_path=logical,

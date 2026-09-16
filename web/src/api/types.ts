@@ -211,7 +211,7 @@ export interface ToolCall {
   arguments: string;
 }
 
-export type AgentToolStatus = "running" | "completed" | "failed";
+export type AgentToolStatus = "running" | "completed" | "blocked" | "failed";
 
 export interface AgentToolError {
   code?: string;

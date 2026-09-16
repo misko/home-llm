@@ -145,8 +145,23 @@ def _assert_artifact_matches_catalog(
             for selector in spec.files
             if artifact_path_matches(locked.logical_path, selector.pattern)
         ]
-        if not selectors or all(selector.role != locked.role for selector in selectors):
+        matching_selectors = [
+            selector for selector in selectors if selector.role == locked.role
+        ]
+        if not matching_selectors:
             mismatches.append(f"file:{locked.logical_path}")
+        if any(
+            (
+                selector.expected_size_bytes is not None
+                and selector.expected_size_bytes != locked.size_bytes
+            )
+            or (
+                selector.expected_sha256 is not None
+                and selector.expected_sha256 != locked.sha256
+            )
+            for selector in matching_selectors
+        ):
+            mismatches.append(f"locked_file:{locked.logical_path}")
     for selector in spec.files:
         if selector.required and not any(
             artifact_path_matches(locked.logical_path, selector.pattern)

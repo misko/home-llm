@@ -6,6 +6,7 @@ import ast
 import asyncio
 import ipaddress
 import json
+import logging
 import math
 import os
 import socket
@@ -38,6 +39,7 @@ _IPV4_TRANSLATION_PREFIXES = (
     ipaddress.ip_network("64:ff9b:1::/48"),
 )
 Resolver = Callable[[str, int], Awaitable[Sequence[str]]]
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -96,9 +98,11 @@ class _ReadableHTML(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._ignored_depth = 0
+        self._main_depth = 0
         self._in_title = False
         self.title_parts: list[str] = []
         self.parts: list[str] = []
+        self.main_parts: list[str] = []
 
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]]
@@ -107,6 +111,8 @@ class _ReadableHTML(HTMLParser):
         lowered = tag.lower()
         if lowered in {"script", "style", "svg", "noscript", "template"}:
             self._ignored_depth += 1
+        if lowered in {"article", "main"} and self._ignored_depth == 0:
+            self._main_depth += 1
         if lowered == "title" and self._ignored_depth == 0:
             self._in_title = True
         if lowered in {
@@ -127,6 +133,8 @@ class _ReadableHTML(HTMLParser):
             "th",
         }:
             self.parts.append("\n")
+            if self._main_depth:
+                self.main_parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
         lowered = tag.lower()
@@ -134,6 +142,8 @@ class _ReadableHTML(HTMLParser):
             self._in_title = False
         if lowered in {"script", "style", "svg", "noscript", "template"}:
             self._ignored_depth = max(0, self._ignored_depth - 1)
+        if lowered in {"article", "main"} and self._ignored_depth == 0:
+            self._main_depth = max(0, self._main_depth - 1)
 
     def handle_data(self, data: str) -> None:
         if self._ignored_depth:
@@ -141,6 +151,8 @@ class _ReadableHTML(HTMLParser):
         if self._in_title:
             self.title_parts.append(data)
         self.parts.append(data)
+        if self._main_depth:
+            self.main_parts.append(data)
 
     @staticmethod
     def clean(parts: Sequence[str]) -> str:
@@ -158,7 +170,8 @@ class _ReadableHTML(HTMLParser):
 
     @property
     def text(self) -> str:
-        return self.clean(self.parts)
+        main = self.clean(self.main_parts)
+        return main or self.clean(self.parts)
 
 
 def _json_size(value: Mapping[str, Any]) -> int:
@@ -375,7 +388,7 @@ def _host_header(host: str, scheme: str, port: int) -> str:
     return authority if port == default else f"{authority}:{port}"
 
 
-async def _read_limited(response: httpx.Response, maximum: int) -> bytes:
+def _require_identity_encoding(response: httpx.Response) -> None:
     content_encoding = response.headers.get("content-encoding", "").strip().lower()
     if content_encoding not in {"", "identity"}:
         # httpx decodes content encodings inside aiter_bytes(). Reject before
@@ -385,6 +398,10 @@ async def _read_limited(response: httpx.Response, maximum: int) -> bytes:
             "unsupported_content_encoding",
             "Compressed web responses are not accepted",
         )
+
+
+async def _read_limited(response: httpx.Response, maximum: int) -> bytes:
+    _require_identity_encoding(response)
     content_length = response.headers.get("content-length")
     if content_length:
         try:
@@ -407,6 +424,40 @@ async def _read_limited(response: httpx.Response, maximum: int) -> bytes:
             )
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+async def _read_bounded_prefix(
+    response: httpx.Response, maximum: int
+) -> tuple[bytes, bool, int | None, int]:
+    """Read at most ``maximum`` bytes plus one byte of truncation evidence."""
+
+    _require_identity_encoding(response)
+    captured = bytearray()
+    evidence_limit = maximum + 1
+    chunk_size = min(64 * 1024, evidence_limit)
+    async for chunk in response.aiter_bytes(chunk_size=chunk_size):
+        remaining = evidence_limit - len(captured)
+        captured.extend(chunk[:remaining])
+        if len(captured) == evidence_limit:
+            break
+    truncated = len(captured) > maximum
+    raw_declared = response.headers.get("content-length")
+    try:
+        declared = int(raw_declared) if raw_declared is not None else None
+    except ValueError:
+        declared = None
+    if declared is not None and declared < 0:
+        declared = None
+    return bytes(captured[:maximum]), truncated, declared, len(captured)
+
+
+def _extraction_quality(text: str) -> str:
+    readable_characters = len("".join(text.split()))
+    if readable_characters == 0:
+        return "empty"
+    if readable_characters < 200:
+        return "sparse"
+    return "usable"
 
 
 class BuiltinToolProvider(ToolProvider):
@@ -534,6 +585,18 @@ class BuiltinToolProvider(ToolProvider):
                         },
                         "text": {"type": "string", "maxLength": 60_000},
                         "truncated": {"type": "boolean"},
+                        "source_host": {"type": "string", "maxLength": 253},
+                        "response_bytes_read": {"type": "integer", "minimum": 0},
+                        "response_bytes_declared": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                        },
+                        "transport_truncated": {"type": "boolean"},
+                        "extracted_characters": {"type": "integer", "minimum": 0},
+                        "extraction_quality": {
+                            "type": "string",
+                            "enum": ["empty", "sparse", "usable"],
+                        },
                     },
                     "required": [
                         "url",
@@ -542,6 +605,12 @@ class BuiltinToolProvider(ToolProvider):
                         "title",
                         "text",
                         "truncated",
+                        "source_host",
+                        "response_bytes_read",
+                        "response_bytes_declared",
+                        "transport_truncated",
+                        "extracted_characters",
+                        "extraction_quality",
                     ],
                     **closed,
                 },
@@ -755,7 +824,12 @@ class BuiltinToolProvider(ToolProvider):
                         "unsupported_content_type",
                         "The requested page is not a supported text document",
                     )
-                body = await _read_limited(
+                (
+                    body,
+                    transport_truncated,
+                    response_bytes_declared,
+                    response_bytes_read,
+                ) = await _read_bounded_prefix(
                     response, self.settings.max_fetch_response_bytes
                 )
             finally:
@@ -777,16 +851,44 @@ class BuiltinToolProvider(ToolProvider):
                     )
                 except json.JSONDecodeError:
                     pass
-            truncated = len(decoded) > self.settings.max_fetch_characters
+            truncated = (
+                transport_truncated
+                or len(decoded) > self.settings.max_fetch_characters
+            )
             text = decoded[: self.settings.max_fetch_characters]
-            return _fit_fetch_result({
-                "url": original,
-                "status": response.status_code,
-                "content_type": media_type,
-                "title": title,
-                "text": text,
-                "truncated": truncated,
-            }, self.settings.max_fetch_result_bytes)
+            quality = _extraction_quality(text)
+            result = _fit_fetch_result(
+                {
+                    "url": original,
+                    "status": response.status_code,
+                    "content_type": media_type,
+                    "title": title,
+                    "text": text,
+                    "truncated": truncated,
+                    "source_host": host,
+                    "response_bytes_read": response_bytes_read,
+                    "response_bytes_declared": response_bytes_declared,
+                    "transport_truncated": transport_truncated,
+                    "extracted_characters": len(decoded),
+                    "extraction_quality": quality,
+                },
+                self.settings.max_fetch_result_bytes,
+            )
+            log_fetch = LOGGER.warning if transport_truncated else LOGGER.info
+            log_fetch(
+                "web_fetch_completed host=%s status=%d bytes_read=%d "
+                "bytes_declared=%s transport_truncated=%s extracted_characters=%d "
+                "quality=%s result_truncated=%s",
+                host,
+                response.status_code,
+                response_bytes_read,
+                response_bytes_declared,
+                transport_truncated,
+                len(decoded),
+                quality,
+                result["truncated"],
+            )
+            return result
 
     async def _resolve_public(
         self, host: str, port: int

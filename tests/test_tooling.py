@@ -329,7 +329,7 @@ async def test_web_fetch_rejects_nat64_translation_prefixes(address: str) -> Non
 
 
 @pytest.mark.asyncio
-async def test_web_fetch_rejects_non_text_and_decoded_oversize_content() -> None:
+async def test_web_fetch_rejects_non_text_and_truncates_oversize_content() -> None:
     responses = [
         httpx.Response(200, headers={"Content-Type": "image/png"}, content=b"png"),
         httpx.Response(
@@ -362,7 +362,118 @@ async def test_web_fetch_rejects_non_text_and_decoded_oversize_content() -> None
         await client.aclose()
 
     assert image.error is not None and image.error.code == "unsupported_content_type"
-    assert large.error is not None and large.error.code == "response_too_large"
+    assert large.ok
+    assert large.value["text"] == "x" * 2048
+    assert large.value["truncated"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("declares_length", [True, False])
+async def test_web_fetch_returns_truncated_text_for_oversized_html_transport(
+    declares_length: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="llm_lab.tooling.builtins")
+    prefix = (
+        b"<html><head><title>Large page</title></head>"
+        b"<body><p>Useful benchmark evidence.</p>"
+    )
+    body = prefix + (b"x" * 4096) + b"</body></html>"
+
+    class ChunkedPage(httpx.AsyncByteStream):
+        def __init__(self) -> None:
+            self.yielded_bytes = 0
+            self.closed = False
+
+        async def __aiter__(self):
+            for offset in range(0, len(body), 256):
+                chunk = body[offset : offset + 256]
+                self.yielded_bytes += len(chunk)
+                yield chunk
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    stream = ChunkedPage()
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        headers = {"Content-Type": "text/html; charset=utf-8"}
+        if declares_length:
+            headers["Content-Length"] = str(len(body))
+        return httpx.Response(200, headers=headers, stream=stream)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = BuiltinToolProvider(
+        BuiltinToolSettings(max_fetch_response_bytes=1024),
+        client=client,
+        resolver=_public_resolver,
+    )
+    try:
+        result = await provider.web_fetch({"url": "https://example.com/large"})
+    finally:
+        await client.aclose()
+
+    assert result["status"] == 200
+    assert result["title"] == "Large page"
+    assert "Useful benchmark evidence." in result["text"]
+    assert result["truncated"] is True
+    assert result["source_host"] == "example.com"
+    assert result["response_bytes_read"] == 1025
+    assert result["response_bytes_declared"] == (len(body) if declares_length else None)
+    assert result["transport_truncated"] is True
+    assert result["extracted_characters"] == len(result["text"])
+    assert result["extraction_quality"] == "usable"
+    assert stream.closed is True
+    assert stream.yielded_bytes <= 1280
+    assert "web_fetch_completed host=example.com" in caplog.text
+    assert "transport_truncated=True" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "expected_text", "expected_quality"),
+    [
+        (
+            (
+                "<html><body><nav>Navigation noise</nav>"
+                "<script>" + ("script noise " * 200) + "</script>"
+                "<main><p>Primary evidence " + ("detail " * 40) + "</p></main>"
+            ).encode(),
+            "Primary evidence",
+            "usable",
+        ),
+        (b"<html><main><p>Malformed but readable", "Malformed but readable", "sparse"),
+        (b"<html><script>only ignored code</script></html>", "", "empty"),
+    ],
+)
+async def test_web_fetch_extracts_main_content_and_reports_quality(
+    body: bytes,
+    expected_text: str,
+    expected_quality: str,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/html"},
+            content=body,
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = BuiltinToolProvider(
+        BuiltinToolSettings(), client=client, resolver=_public_resolver
+    )
+    try:
+        result = await provider.web_fetch({"url": "https://example.com/article"})
+    finally:
+        await client.aclose()
+
+    assert expected_text in result["text"]
+    assert "Navigation noise" not in result["text"]
+    assert "script noise" not in result["text"]
+    assert result["extraction_quality"] == expected_quality
+    assert result["extracted_characters"] == len(result["text"])
 
 
 @pytest.mark.asyncio

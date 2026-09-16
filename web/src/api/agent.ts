@@ -9,6 +9,12 @@ import type {
 export const RESEARCH_TOOLSET = "standard-readonly";
 const MAX_SERVER_ERROR_MESSAGE = 512;
 const MAX_INSTRUCTIONS_LENGTH = 16_384;
+const POLICY_BLOCK_CODES = new Set([
+  "fetch_url_not_approved",
+  "open_world_chain_blocked",
+  "tool_not_permitted",
+  "tool_requires_approval",
+]);
 
 export interface AgentTurnUpdate {
   content: string;
@@ -252,17 +258,25 @@ export async function streamAgentTurn(
         status: "completed",
         result: event.result,
       });
-      for (const source of extractSources(event.result)) sources.set(source.url, source);
+      for (const source of extractSources(event.result)) {
+        const priorSource = sources.get(source.url);
+        sources.set(source.url, {
+          ...priorSource,
+          ...source,
+          snippet: source.snippet ?? priorSource?.snippet,
+        });
+      }
     } else if (type === "tool.failed") {
       const idValue = event.call_id ?? event.tool_call_id;
       const id = typeof idValue === "string" ? idValue : `tool-${tools.size + 1}`;
       const prior = tools.get(id);
+      const error = errorMessage(event.error);
       tools.set(id, {
         id,
         name: typeof event.name === "string" ? event.name : prior?.name ?? "tool",
         arguments: event.arguments ?? prior?.arguments,
-        status: "failed",
-        error: errorMessage(event.error),
+        status: error.code && POLICY_BLOCK_CODES.has(error.code) ? "blocked" : "failed",
+        error,
       });
     } else if (type === "turn.completed" || type === "run.completed") {
       completed = true;

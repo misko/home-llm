@@ -230,6 +230,7 @@ def install_agent_api(
                         model=state.public_alias,
                         deployment=state.deployment_id,
                         base_url=state.base_url,
+                        context_size=state.deployment.context_size,
                     ):
                         run_id = event.run_id
                         sequence = event.sequence + 1

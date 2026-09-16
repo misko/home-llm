@@ -1,0 +1,24 @@
+schema_version: 1
+id: qwen3.8-27b-heretic-rvn-q4-k-m
+model_id: qwen3.8-27b-heretic-rvn
+source:
+  provider: huggingface
+  repo_id: 0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF
+  repo_type: model
+  revision: 20b94f0613b632b4848bbe3b1e05d9ee0c2b1608
+format: gguf
+quantization: Q4_K_M-multilingual
+expected_size_bytes: 16547443996
+files:
+  - pattern: RVN-Q4_K_M-multilingual.gguf
+    role: weights
+    expected_size_bytes: 16547400224
+    expected_sha256: 9ed40ccc8b8432f38b9a85d0ca67928167f5719e8c10bd299e56d34facaf6e61
+  - pattern: chat_template.jinja
+    role: template
+    expected_size_bytes: 8952
+  - pattern: README.md
+    role: model_card
+    expected_size_bytes: 34820
+requires_remote_code: false
+notes: Publisher-recommended multilingual Q4_K_M file for 24 GB GPUs; MTP and vision projector are intentionally excluded.

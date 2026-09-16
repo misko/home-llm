@@ -8,8 +8,10 @@ Type=simple
 WorkingDirectory=/home/mouse9911/gits/llms
 Environment=LLM_LAB_REPO=/home/mouse9911/gits/llms
 Environment=LLM_LAB_DATA=/mnt/md2/llm-lab
+Environment=LLM_LAB_ALLOWED_HOSTS=localhost,127.0.0.1,kalman,kalman.local,192.168.1.141,100.109.34.49
+Environment=LLM_LAB_GATEWAY_URL=http://192.168.1.141:14000
 EnvironmentFile=-/home/mouse9911/gits/llms/.env
-ExecStart=/home/mouse9911/gits/llms/.venv/bin/uvicorn llm_lab.gateway:app --host 127.0.0.1 --port 14000
+ExecStart=/home/mouse9911/gits/llms/.venv/bin/uvicorn llm_lab.gateway:app --host 0.0.0.0 --port 14000
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=20

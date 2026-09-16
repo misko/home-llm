@@ -1,0 +1,30 @@
+schema_version: 1
+id: qwen3.8-27b-fineweb-24h-20260912-q4-k-m-lora
+model_id: qwen3.8-27b-fineweb-24h-20260912
+source:
+  provider: local
+  repo_type: model
+  revision: 9535617e57d61b890198e54cc9a00bd7aa6c2c49d8d0a6e41de77972962fb5d7
+  local_path: /mnt/md2/llm-lab/runs/training/fineweb-24h-20260912/export
+format: gguf
+quantization: Q4_K_M + F16 LoRA
+expected_size_bytes: 18779878780
+files:
+- pattern: Qwen3.8-27B-Q4_K_M.gguf
+  role: weights
+  required: true
+- pattern: mmproj-Qwen3.8-27B-f16.gguf
+  role: vision_projector
+  required: true
+- pattern: fineweb-adapter.gguf
+  role: adapter
+  required: true
+- pattern: README.md
+  role: model_card
+  required: true
+- pattern: training-provenance.json
+  role: config
+  required: true
+requires_remote_code: false
+notes: Original frozen base GGUF plus FineWeb LoRA adapter; provenance includes training
+  checkpoint and data hashes.

@@ -1,0 +1,31 @@
+schema_version: 1
+id: qwen3.8-27b-fineweb-24h-20260912
+display_name: "Qwen3.8 27B \xB7 FineWeb 24h"
+family: qwen3.8
+description: Experimental FineWeb continued-pretraining adapter; compare against original
+  Qwen.
+total_params_b: 27.0
+active_params_b: 27.0
+native_context: 262144
+modalities:
+- text
+- image
+- video
+capabilities:
+- chat
+- reasoning
+- tools
+- structured_output
+- vision
+- video
+license:
+  name: Apache-2.0
+  url: https://huggingface.co/Qwen/Qwen3.8-27B/blob/main/LICENSE
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+upstream:
+  provider: local
+  repo_type: model
+  revision: 9535617e57d61b890198e54cc9a00bd7aa6c2c49d8d0a6e41de77972962fb5d7
+  local_path: /mnt/md2/llm-lab/runs/training/fineweb-24h-20260912/checkpoints/step-00012614

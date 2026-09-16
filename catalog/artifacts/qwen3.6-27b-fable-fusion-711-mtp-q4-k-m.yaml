@@ -1,0 +1,22 @@
+schema_version: 1
+id: qwen3.6-27b-fable-fusion-711-mtp-q4-k-m
+model_id: qwen3.6-27b-fable-fusion-711
+source:
+  provider: huggingface
+  repo_id: DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF
+  repo_type: model
+  revision: 9e521b228d6a996d02e43602436367f954bd576d
+format: gguf
+quantization: NEO-MAX-MTP-Q4_K_M
+expected_size_bytes: 19426183200
+files:
+  - pattern: Qwen3.6-27B-Fable-Fus-711-UnHeretic-NM-DAU-NEO-MAX-NEO-MTP-Q4_K_M.gguf
+    role: weights
+    expected_size_bytes: 18498575840
+    expected_sha256: c796c2c011eaa0edf06395ff49cda5bfd4843ad52b86b58a83296dfc33849e4e
+  - pattern: mmproj-F16.gguf
+    role: vision_projector
+    expected_size_bytes: 927607360
+    expected_sha256: eacf610d1ee4bd5ed0197a0777dd8f4fceb8eefa27009067c7d496cb68fbde45
+requires_remote_code: false
+notes: Q4_K_M selected for full RTX 4090 offload; MTP tensors are retained at Q8_0 by the publisher.

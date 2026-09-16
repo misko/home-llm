@@ -1,0 +1,26 @@
+[Unit]
+Description=LLM Lab FineWeb 24-hour training and candidate export
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/md2/llm-lab/runs/training/fineweb-24h-20260912/source-shared-gpu/training
+Environment=PYTHONPATH=/mnt/md2/llm-lab/runs/training/fineweb-24h-20260912/source-shared-gpu/src
+Environment=OMP_NUM_THREADS=4
+Environment=RAYON_NUM_THREADS=4
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/mouse9911/gits/llms/.venv/bin/python /mnt/md2/llm-lab/runs/training/fineweb-24h-20260912/source-shared-gpu/training/supervise.py /mnt/md2/llm-lab/runs/training/fineweb-24h-20260912/config.json
+Restart=on-failure
+RestartSec=60
+TimeoutStopSec=600
+# Supervisor forwards TERM to the worker; allow W&B to flush before group cleanup.
+KillMode=mixed
+StandardOutput=append:/mnt/md2/llm-lab/runs/training/fineweb-24h-20260912/service.log
+StandardError=inherit
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,21 @@
+schema_version: 1
+id: qwen-comparison-qwen-4090
+artifact_id: qwen-comparison-qwen-q4-k-m
+public_alias: compare-qwen
+backend: llama_cpp
+executable: ${LLM_LAB_DATA}/cache/runtimes/llama-cpp-cuda-4090/llama-server
+runtime_lock_id: llama-cpp-cuda-4090
+host: 127.0.0.1
+port: 18091
+context_size: 8192
+parallel: 1
+gpu_layers: all
+flash_attention: true
+kv_cache_type_k: q8_0
+kv_cache_type_v: q8_0
+reasoning_mode: 'off'
+health_path: /health
+startup_timeout_seconds: 300.0
+extra_args:
+- --jinja
+environment: {}

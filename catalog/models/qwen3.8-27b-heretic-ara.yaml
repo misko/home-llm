@@ -1,0 +1,22 @@
+schema_version: 1
+id: qwen3.8-27b-heretic-ara
+display_name: Qwen3.8 27B Heretic ARA BF16
+family: qwen3.8
+description: Full-weight Qwen3.8-27B checkpoint modified with Heretic arbitrary-rank ablation.
+total_params_b: 27.0
+active_params_b: 27.0
+native_context: 262144
+modalities: [text, image, video]
+capabilities: [chat, reasoning, tools, structured_output, vision, video]
+license:
+  name: Apache-2.0
+  url: https://huggingface.co/Qwen/Qwen3.8-27B/blob/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/LICENSE
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+  notes: The publisher declares Apache-2.0 inherited from Qwen3.8-27B.
+upstream:
+  provider: huggingface
+  repo_id: trohrbaugh/Qwen3.8-27B-heretic-ara
+  repo_type: model
+  revision: a67ae100d933c0d17af3232bda35825979fc63ce

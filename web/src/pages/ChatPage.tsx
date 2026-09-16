@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type SetStateAction } from "react";
 import {
   Bot,
   BrainCircuit,
@@ -8,6 +8,8 @@ import {
   ExternalLink,
   ImagePlus,
   LoaderCircle,
+  MessageSquarePlus,
+  MessagesSquare,
   Paperclip,
   Send,
   Settings2,
@@ -25,6 +27,14 @@ import type { AgentSource, AgentToolExecution, ChatAttachment, ChatMessage, Tool
 import { usePortfolio, useRuntime } from "../hooks/useConsoleData";
 import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
+import {
+  getActiveChatId,
+  loadChats,
+  removeChat,
+  saveChats,
+  setStoredActiveChatId,
+  type SavedChat,
+} from "../chat/history";
 
 const prompts = [
   ["Review a piece of code", "Review this code for correctness, edge cases, and maintainability:\n\n"],
@@ -35,9 +45,50 @@ const supportedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const maximumConversationImages = 4;
 const maximumConversationMessages = 64;
 const maximumInstructionsLength = 16_384;
+const defaultMaximumOutputTokens = 32_000;
+const maximumOutputTokens = 32_768;
 
 function now() {
   return new Date().toISOString();
+}
+
+function newChat(): SavedChat {
+  const timestamp = now();
+  return {
+    id: createClientId(),
+    title: "New chat",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    messages: [],
+    settings: {
+      temperature: 0,
+      maxTokens: defaultMaximumOutputTokens,
+      systemPrompt: "",
+      toolsEnabled: false,
+    },
+  };
+}
+
+function chatTitle(messages: ChatMessage[]) {
+  const firstUserMessage = messages.find((message) => message.role === "user");
+  const normalized = firstUserMessage?.content.replace(/\s+/g, " ").trim();
+  if (normalized) return normalized.length > 52 ? `${normalized.slice(0, 49)}…` : normalized;
+  if (firstUserMessage?.attachments?.length) return firstUserMessage.attachments[0].name || "Image conversation";
+  return "New chat";
+}
+
+function chatPreview(chat: SavedChat) {
+  const last = [...chat.messages].reverse().find((message) => message.content.trim());
+  return last?.content.replace(/\s+/g, " ").trim() || (chat.messages.length ? "Image conversation" : "No messages yet");
+}
+
+function chatTime(timestamp: string) {
+  const date = new Date(timestamp);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) {
+    return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  }
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
 }
 
 function ToolCallCard({ tool }: { tool: ToolCall }) {
@@ -62,13 +113,25 @@ function toolLabel(name: string) {
   return name.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function boundedFetchSummary(tool: AgentToolExecution) {
+  if (tool.name !== "web_fetch" || tool.status !== "completed" || !tool.result || typeof tool.result !== "object") return null;
+  const result = tool.result as Record<string, unknown>;
+  if (result.truncated !== true) return null;
+  const characters = typeof result.extracted_characters === "number"
+    ? `${result.extracted_characters.toLocaleString()} readable characters`
+    : "partial page text";
+  return `Bounded public extract · ${characters}`;
+}
+
 function ToolExecutionCard({ tool }: { tool: AgentToolExecution }) {
-  const statusLabel = tool.status === "running" ? "Running" : tool.status === "completed" ? "Complete" : "Failed";
-  const disclosure = tool.name === "calculator" || tool.name === "current_time"
+  const boundedFetch = boundedFetchSummary(tool);
+  const statusLabel = tool.status === "running" ? "Running" : boundedFetch ? "Bounded extract" : tool.status === "completed" ? "Complete" : tool.status === "blocked" ? "Blocked" : "Failed";
+  const disclosure = boundedFetch ?? (tool.name === "calculator" || tool.name === "current_time"
     ? "Runs locally · no network or writes"
     : tool.name === "web_search" || tool.name === "web_fetch"
       ? "Sends queries and requested public pages to the internet · no writes"
-      : "Read-only tool · no writes";
+      : "Read-only tool · no writes");
+  const statusClass = boundedFetch ? "bounded" : tool.status;
   return (
     <details className={"tool-execution-card " + tool.status} open={tool.status === "running"} data-testid={"tool-" + tool.id}>
       <summary>
@@ -77,8 +140,8 @@ function ToolExecutionCard({ tool }: { tool: AgentToolExecution }) {
           <strong>{toolLabel(tool.name)}</strong>
           <small>{disclosure}</small>
         </span>
-        <span className={"tool-status " + tool.status}>
-          {tool.status === "running" ? <LoaderCircle className="spin" size={13} /> : tool.status === "completed" ? <CheckCircle2 size={13} /> : <X size={13} />}
+        <span className={"tool-status " + statusClass}>
+          {tool.status === "running" ? <LoaderCircle className="spin" size={13} /> : tool.status === "completed" ? <CheckCircle2 size={13} /> : tool.status === "blocked" ? <ShieldCheck size={13} /> : <X size={13} />}
           {statusLabel}
         </span>
       </summary>
@@ -113,17 +176,108 @@ function SourceList({ sources }: { sources: AgentSource[] }) {
 export function ChatPage() {
   const runtime = useRuntime();
   const portfolio = usePortfolio();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const initialChatRef = useRef<SavedChat | null>(null);
+  if (!initialChatRef.current) initialChatRef.current = newChat();
+  const [chats, setChats] = useState<SavedChat[]>([initialChatRef.current]);
+  const [activeChatId, setActiveChatId] = useState(initialChatRef.current.id);
+  const [historyReady, setHistoryReady] = useState(false);
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [temperature, setTemperature] = useState(0);
-  const [maxTokens, setMaxTokens] = useState(1024);
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [toolsEnabled, setToolsEnabled] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const persistedChatsRef = useRef(new Map<string, SavedChat>());
+
+  const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
+  const messages = activeChat?.messages ?? [];
+  const temperature = activeChat?.settings.temperature ?? 0;
+  const maxTokens = activeChat?.settings.maxTokens ?? defaultMaximumOutputTokens;
+  const systemPrompt = activeChat?.settings.systemPrompt ?? "";
+  const toolsEnabled = activeChat?.settings.toolsEnabled ?? false;
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadChats().then((savedChats) => {
+      if (cancelled) return;
+      if (savedChats.length) {
+        const sorted = [...savedChats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        const storedActive = getActiveChatId();
+        setChats(sorted);
+        setActiveChatId(sorted.some((chat) => chat.id === storedActive) ? storedActive! : sorted[0].id);
+      }
+      setHistoryReady(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!historyReady) return;
+    const changedChats = chats.filter((chat) => persistedChatsRef.current.get(chat.id) !== chat);
+    if (!changedChats.length) return;
+    const timer = window.setTimeout(() => {
+      void saveChats(changedChats).then(() => {
+        for (const chat of changedChats) persistedChatsRef.current.set(chat.id, chat);
+      });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [chats, historyReady]);
+
+  useEffect(() => {
+    if (historyReady) setStoredActiveChatId(activeChatId);
+  }, [activeChatId, historyReady]);
+
+  function updateActiveChat(transform: (chat: SavedChat) => SavedChat) {
+    setChats((current) => current.map((chat) => chat.id === activeChatId ? transform(chat) : chat));
+  }
+
+  function setMessages(action: SetStateAction<ChatMessage[]>) {
+    updateActiveChat((chat) => {
+      const nextMessages = typeof action === "function" ? action(chat.messages) : action;
+      return { ...chat, messages: nextMessages, title: chatTitle(nextMessages), updatedAt: now() };
+    });
+  }
+
+  function updateSettings(settings: Partial<SavedChat["settings"]>) {
+    updateActiveChat((chat) => ({ ...chat, settings: { ...chat.settings, ...settings }, updatedAt: now() }));
+  }
+
+  function selectChat(chatId: string) {
+    if (streaming || chatId === activeChatId) return;
+    setActiveChatId(chatId);
+    setDraft("");
+    setAttachments([]);
+    setError(null);
+  }
+
+  function createNewChat() {
+    if (streaming) return;
+    if (!messages.length) return;
+    const chat = newChat();
+    setChats((current) => [chat, ...current]);
+    setActiveChatId(chat.id);
+    setDraft("");
+    setAttachments([]);
+    setError(null);
+  }
+
+  function deleteChat(chatId: string) {
+    if (streaming || !window.confirm("Delete this saved chat? This cannot be undone.")) return;
+    void removeChat(chatId);
+    setChats((current) => {
+      const remaining = current.filter((chat) => chat.id !== chatId);
+      if (remaining.length) {
+        if (chatId === activeChatId) setActiveChatId(remaining[0].id);
+        return remaining;
+      }
+      const replacement = newChat();
+      setActiveChatId(replacement.id);
+      return [replacement];
+    });
+    setDraft("");
+    setAttachments([]);
+    setError(null);
+  }
 
   const activeAlias = runtime.data?.public_alias;
   const activeDeployment = runtime.data?.deployment_id;
@@ -180,7 +334,7 @@ export function ChatPage() {
     const content = draft.trim();
     if ((!content && !attachments.length) || !activeAlias || !runtime.data?.ready || streaming) return;
     if (messages.length + 2 > maximumConversationMessages) {
-      setError("This conversation reached the 64-message limit. Clear the session to start a new one.");
+      setError("This conversation reached the 64-message limit. Start a new chat to continue.");
       return;
     }
     const submittedDraft = draft;
@@ -240,15 +394,38 @@ export function ChatPage() {
 
   const canSend = Boolean(runtime.data?.ready && activeAlias && (draft.trim() || attachments.length) && !streaming);
 
+  const sortedChats = [...chats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
   return (
-    <section className="workspace chat-workspace">
+    <section className="workspace workspace-wide chat-workspace">
+      <aside className="chat-history" aria-label="Chat history">
+        <div className="chat-history-head">
+          <div><MessagesSquare size={17} /><strong>Chats</strong></div>
+          <button className="icon-button" aria-label="New chat" title="New chat" disabled={streaming} onClick={createNewChat}><MessageSquarePlus size={16} /></button>
+        </div>
+        <div className="chat-history-list">
+          {sortedChats.map((chat) => (
+            <div className={`chat-history-item ${chat.id === activeChatId ? "active" : ""}`} key={chat.id}>
+              <button className="chat-history-select" disabled={streaming} onClick={() => selectChat(chat.id)} aria-current={chat.id === activeChatId ? "page" : undefined}>
+                <span><strong>{chat.title}</strong><time dateTime={chat.updatedAt}>{chatTime(chat.updatedAt)}</time></span>
+                <small>Latest: {chatPreview(chat)}</small>
+              </button>
+              <button className="chat-history-delete" aria-label={`Delete ${chat.title}`} title="Delete chat" disabled={streaming} onClick={() => deleteChat(chat.id)}><Trash2 size={13} /></button>
+            </div>
+          ))}
+        </div>
+        <p>Saved in this browser. Select a chat to continue it.</p>
+      </aside>
+
+      <div className="chat-conversation">
       <div className="page-head conversation-head">
         <div>
-          <span className="eyebrow">SESSION · NOT PERSISTED</span>
+          <span className="eyebrow">SAVED CHAT · {messages.length} MESSAGES</span>
           <h1>{activeAlias ? `Chat with ${activeAlias}` : "Chat"}</h1>
         </div>
         <div className="head-actions">
-          {messages.length > 0 && <button className="ghost-button" onClick={() => setMessages([])}><Trash2 size={15} /> Clear</button>}
+          {messages.length > 0 && <button className="ghost-button" disabled={streaming} onClick={() => setMessages([])}><Trash2 size={15} /> Clear</button>}
+          <button className="ghost-button" disabled={streaming} onClick={createNewChat}><MessageSquarePlus size={15} /> New chat</button>
           <button className="ghost-button" onClick={() => setSettingsOpen(true)}><Settings2 size={15} /> Generation settings</button>
         </div>
       </div>
@@ -260,7 +437,7 @@ export function ChatPage() {
           <div className="welcome-card">
             <span className="orb"><BrainCircuit size={30} /></span>
             <h2>What are we working on?</h2>
-            <p>Messages remain in this browser session. The active deployment can stream text{supportsImages ? " and inspect images" : ""}. {supportsTools ? "Research tools are off by default; enabling them sends queries and requested public pages to the internet · no writes." : ""}</p>
+            <p>This chat is saved in this browser so you can return and continue later. The active deployment can stream text{supportsImages ? " and inspect images" : ""}. {supportsTools ? "Research tools are off by default; enabling them sends queries and requested public pages to the internet · no writes." : ""}</p>
             <div className="prompt-grid">
               {prompts.map(([label, prompt], index) => (
                 <button key={label} onClick={() => setDraft(prompt)}>
@@ -335,7 +512,7 @@ export function ChatPage() {
                 aria-label="Research tools"
                 checked={toolsEnabled && supportsTools}
                 disabled={!supportsTools || streaming}
-                onChange={(event) => setToolsEnabled(event.target.checked)}
+                onChange={(event) => updateSettings({ toolsEnabled: event.target.checked })}
               />
               <span className="toggle-track" aria-hidden="true"><span /></span>
               <ShieldCheck size={15} />
@@ -354,12 +531,16 @@ export function ChatPage() {
 
       <Modal open={settingsOpen} title="Generation settings" onClose={() => setSettingsOpen(false)}>
         <div className="form-stack">
-          <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} /></label>
-          <label>Maximum output tokens<input type="number" min="1" max="8192" value={maxTokens} onChange={(event) => setMaxTokens(Math.max(1, Number(event.target.value)))} /></label>
-          <label>System prompt<textarea rows={5} maxLength={maximumInstructionsLength} value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value.slice(0, maximumInstructionsLength))} placeholder="Optional instructions for this session" /></label>
+          <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => updateSettings({ temperature: Number(event.target.value) })} /></label>
+          <label>Maximum output tokens<input type="number" min="1" max={maximumOutputTokens} value={maxTokens} onChange={(event) => updateSettings({ maxTokens: Math.min(maximumOutputTokens, Math.max(1, Math.trunc(Number(event.target.value) || 1))) })} /></label>
+          <p className="modal-note">
+            {defaultMaximumOutputTokens.toLocaleString()} is a ceiling, not a target. Prompt, history, reasoning, and reply share the active {runtime.data?.context_size?.toLocaleString() ?? "model"}-token context; tool-enabled turns also have safety deadlines.
+          </p>
+          <label>System prompt<textarea rows={5} maxLength={maximumInstructionsLength} value={systemPrompt} onChange={(event) => updateSettings({ systemPrompt: event.target.value.slice(0, maximumInstructionsLength) })} placeholder="Optional instructions for this chat" /></label>
           <button className="primary-button" onClick={() => setSettingsOpen(false)}>Apply settings</button>
         </div>
       </Modal>
+      </div>
     </section>
   );
 }

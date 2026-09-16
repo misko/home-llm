@@ -72,6 +72,8 @@ describe("streamAgentTurn", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(eventStream([
       "data: {\"type\":\"tool.call\",\"data\":{\"tool_call_id\":\"fetch-1\",\"name\":\"web.fetch\",\"arguments\":{\"url\":\"https://example.com\"}}}\n\n",
       "data: {\"type\":\"tool.failed\",\"tool_call_id\":\"fetch-1\",\"name\":\"web.fetch\",\"error\":{\"code\":\"timeout\",\"message\":\"Fetch timed out\",\"retryable\":true}}\n\n",
+      "data: {\"type\":\"tool.call\",\"data\":{\"tool_call_id\":\"fetch-2\",\"name\":\"web.fetch\",\"arguments\":{\"url\":\"https://example.com/again\"}}}\n\n",
+      "data: {\"type\":\"tool.failed\",\"tool_call_id\":\"fetch-2\",\"name\":\"web.fetch\",\"error\":{\"code\":\"open_world_chain_blocked\",\"message\":\"Further open-world calls are blocked\",\"retryable\":false}}\n\n",
       "data: {\"type\":\"assistant.message\",\"content\":\"I could not fetch that page.\"}\n\n",
       "data: {\"type\":\"run.completed\"}\n\n",
     ]), { status: 200 })));
@@ -89,6 +91,11 @@ describe("streamAgentTurn", () => {
       name: "web.fetch",
       status: "failed",
       error: { code: "timeout", message: "Fetch timed out", retryable: true },
+    });
+    expect(result.tools[1]).toMatchObject({
+      id: "fetch-2",
+      status: "blocked",
+      error: { code: "open_world_chain_blocked" },
     });
   });
 

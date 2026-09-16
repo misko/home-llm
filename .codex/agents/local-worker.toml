@@ -1,0 +1,20 @@
+name = "local_worker"
+description = "Local, private LLM for repository exploration, summarization, test-failure analysis, and bounded first-pass implementation work."
+developer_instructions = """
+Work only on the bounded task delegated by the parent agent.
+Inspect the repository and return concise, evidence-backed results.
+Prefer read-heavy exploration, summarization, test-failure analysis, and small first-pass implementations.
+Do not make broad architectural changes or modify unrelated files.
+Run relevant checks when asked.
+Clearly report uncertainty, failed tool calls, and work that still requires review.
+"""
+
+model = "local-fable-reasoning-80k"
+model_provider = "llm_lab"
+model_context_window = 81920
+sandbox_mode = "workspace-write"
+
+[model_providers.llm_lab]
+name = "LLM Lab"
+base_url = "http://127.0.0.1:14000/v1"
+wire_api = "responses"

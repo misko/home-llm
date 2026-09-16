@@ -1,0 +1,112 @@
+schema_version: 1
+id: qwen-comparison-v0.1
+status: implemented_waiting_for_fineweb_export
+description: Four model variants; shared inputs, deployment settings and independent final evaluation.
+lineage:
+  status: explicit_working_assumption_matching_prepared_heretic_workflow
+  heretic_parent: qwen-ft-fineweb
+  heretic_plus_parent: qwen-ft-fineweb
+  note: Heretic++ starts independently from the same parent, not from the Heretic output.
+arms:
+  - id: qwen
+    label: Qwen
+    parent: null
+    state: available
+    deployment_id: qwen-comparison-qwen-4090
+    treatment: original
+  - id: qwen-ft-fineweb
+    label: Qwen FT FineWeb
+    parent: qwen
+    state: training
+    deployment_id: qwen-comparison-qwen-ft-fineweb-4090
+    treatment: 24-hour FineWeb QLoRA
+  - id: qwen-heretic
+    label: Qwen Heretic
+    parent: qwen-ft-fineweb
+    state: prepared_not_run
+    deployment_id: null
+    treatment: pinned upstream Heretic
+  - id: qwen-heretic-plus
+    label: Qwen Heretic++
+    parent: qwen-ft-fineweb
+    state: implemented_cpu_validated_gpu_pending
+    deployment_id: null
+    treatment: semantic response scoring, multi-position preservation, constrained candidate selection
+primary_contrasts:
+  - [qwen-ft-fineweb, qwen]
+  - [qwen-heretic, qwen-ft-fineweb]
+  - [qwen-heretic-plus, qwen-heretic]
+  - [qwen-heretic-plus, qwen-ft-fineweb]
+protocol:
+  mode: text_only
+  runtime_lock: llama-cpp-cuda-4090
+  serving_context_tokens: 8192
+  primary_track: nonthinking
+  temperature: 0
+  top_p: 1
+  seed: 20260913
+  concurrent_requests: 1
+  primary_quantization: Q4_K_M
+  primary_artifact_form: all_arms_merged_then_quantized_with_same_converter_and_settings
+  adapter_serving_track: separate_secondary_track
+  malformed_or_empty_response: task_failure
+  truncation: task_failure_and_separate_rate
+  infrastructure_error: retained_separately_never_silently_dropped
+  judges: fixed_independent_rubric_with_blind_human_audit
+  final_test_used_for_optimization: false
+  code_execution: isolated_cpu_container_no_network_no_secrets_resource_limits
+  hardware_mode: shared_gpu_record_humandescent_activity
+  existing_training_gpu_duty_target: 0.85
+  inference_throttle: process_duty_watchdog_0_85_real_gpu_probe_required
+  note: Training's duty-cycle helper does not throttle llama.cpp serving; do not imply a hard GPU cap.
+native_pilot:
+  suite_id: qwen-comparison-pilot
+  cases: 12
+  executable_in_current_lab: true
+  partition: development_only
+core:
+  executable_as_a_complete_pipeline: true
+  final_case_ids_and_source_revisions: frozen_in_dataset_lock_and_cases_jsonl
+  tasks:
+    - {id: ifeval, family: instruction_following, cases: 128, metric: prompt_strict_accuracy, source: "https://arxiv.org/abs/2311.07911", revision: "966cd89545d6b6acfd7638bc708b98261ca58e84"}
+    - {id: gsm8k, family: reasoning, cases: 128, metric: exact_answer_accuracy, source: "https://github.com/openai/grade-school-math", revision: "740312add88f781978c0658806c59bc2815b9866"}
+    - {id: mmlu-pro, family: reasoning, cases: 140, metric: subject_macro_accuracy, source: "https://github.com/TIGER-AI-Lab/MMLU-Pro", revision: "b189ec765aa7ed75c8acfea42df31fdae71f97be"}
+    - {id: humaneval-plus, family: coding, cases: 164, metric: pass_at_1, source: "https://github.com/evalplus/evalplus", revision: "v0.1.10"}
+    - {id: xstest-safe, family: useful_answers, cases: 125, metric: useful_answer_rate_and_false_refusal_rate, source: "https://github.com/paul-rottger/xstest", revision: "d7bb5bd738c1fcbc36edd83d5e7d1b71a3e2d84d"}
+    - {id: xstest-contrast, family: boundary_behavior, cases: 100, metric: rubric_appropriate_response_rate, source: "https://github.com/paul-rottger/xstest", revision: "d7bb5bd738c1fcbc36edd83d5e7d1b71a3e2d84d"}
+    - {id: grounded-local, family: grounding, cases: 64, metric: supported_answer_and_correct_abstention_rate, source: local_versioned_fixtures, revision: null}
+    - {id: tool-json-local, family: structured_tools, cases: 64, metric: task_success_with_argument_validation, source: local_versioned_fixtures, revision: null}
+    - {id: context-local, family: context, cases: 24, metric: retrieval_and_multiturn_state_accuracy, source: local_versioned_fixtures, revision: null}
+  cases_per_arm: 937
+  case_instances_four_arms: 3748
+  metrics_not_in_case_total:
+    - fineweb_heldout_nll_on_65536_identical_target_tokens
+    - prefill_and_decode_throughput
+    - ttft_and_latency_p50_p95
+    - peak_vram
+    - gpu_energy_joules_per_correct_answer_with_shared_load_caveat
+    - humandescent_task_latency_during_benchmark
+report:
+  headline_composite: none
+  format: four_column_scorecard_plus_paired_deltas_and_failure_browser
+  uncertainty: paired_bootstrap_95_percent_intervals_clustered_by_prompt_group
+  independent_units: unique_prompt_groups_not_repeated_decodes
+  missing_results: pending_never_zero
+  wandb_project: projectspf/llm-lab-fineweb
+  wandb_group: qwen-comparison-v0.1
+  raw_generated_responses: local_by_default
+heretic_plus_v0_1:
+  implementation_status: implemented_cpu_validated_gpu_pending
+  intervention_family: unchanged_from_upstream
+  improvements:
+    - semantic_task_success_and_response_type_scorer
+    - teacher_forced_KL_at_sampled_positions_on_identical_reference_continuations
+    - development_capability_constraints_for_candidate_selection
+  search_comparison:
+    primary_budget: equal_accumulated_gpu_job_wall_time_in_matched_shared_load_conditions
+    secondary_budget: equal_completed_trial_count
+    starting_trial_plan: 32
+    allocated_seconds_per_arm: 14400
+    equal_trial_analysis: conditional_on_available_matched_trials
+    no_free_extra_search_budget_for_plus: true
+  deferred_research: [hybrid_layer_specific_strengths, multiple_behavior_directions]

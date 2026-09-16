@@ -1,0 +1,22 @@
+schema_version: 1
+id: fable-reasoning-smoke
+version: "1.0.0"
+description: Bounded reasoning-mode qualification for Qwen3.6 Fable Fusion 711.
+kind: smoke
+defaults:
+  temperature: 0
+  top_p: 1
+  max_tokens: 1024
+  seed: 42
+warmup_repetitions: 0
+repetitions: 1
+cases:
+  - id: discount-then-tax
+    messages:
+      - role: user
+        content: A store gives 20% off an $80 item, then adds 10% sales tax. Think step by step and give the final total.
+    required_capabilities: [reasoning]
+    expectations:
+      - kind: contains
+        value: "70.40"
+      - kind: nonempty

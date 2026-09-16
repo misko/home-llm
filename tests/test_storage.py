@@ -579,3 +579,27 @@ def test_hf_pull_resolves_once_and_pins_download(tmp_path: Path) -> None:
     assert pulled.selected_files == ("model.gguf",)
     assert calls[0]["revision"] == resolved
     assert calls[0]["allow_patterns"] == ["model.gguf"]
+
+
+def test_promotion_enforces_per_file_size_and_sha256(tmp_path: Path) -> None:
+    tree = tmp_path / "source"
+    tree.mkdir()
+    payload = b"reviewed-model"
+    (tree / "model.gguf").write_bytes(payload)
+    paths = _paths(tmp_path)
+    artifact = _artifact("artifact-a", tree).model_copy(
+        update={
+            "files": (
+                ArtifactFileSelector(
+                    pattern="model.gguf",
+                    role=FileRole.WEIGHTS,
+                    expected_size_bytes=len(payload),
+                    expected_sha256="0" * 64,
+                ),
+            )
+        }
+    )
+
+    with ArtifactStore(paths) as store:
+        with pytest.raises(IntegrityError, match="catalog expected 0{64}"):
+            store.promote(artifact, tree, "local")

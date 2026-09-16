@@ -1,0 +1,22 @@
+schema_version: 1
+id: qwen3.8-27b-heretic-rvn
+display_name: Qwen3.8 27B Heretic RVN
+family: qwen3.8
+description: Community RVN refinement of a Heretic ARA-decensored Qwen3.8-27B checkpoint.
+total_params_b: 27.0
+active_params_b: 27.0
+native_context: 262144
+modalities: [text]
+capabilities: [chat, reasoning, tools, structured_output]
+license:
+  name: Apache-2.0
+  url: https://huggingface.co/Qwen/Qwen3.8-27B/blob/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/LICENSE
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+  notes: The publisher declares Apache-2.0 inherited from Qwen3.8-27B.
+upstream:
+  provider: huggingface
+  repo_id: 0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF
+  repo_type: model
+  revision: 20b94f0613b632b4848bbe3b1e05d9ee0c2b1608

@@ -1,0 +1,70 @@
+schema_version: 1
+id: qwen3.8-27b-heretic-ara-bf16
+model_id: qwen3.8-27b-heretic-ara
+source:
+  provider: huggingface
+  repo_id: trohrbaugh/Qwen3.8-27B-heretic-ara
+  repo_type: model
+  revision: a67ae100d933c0d17af3232bda35825979fc63ce
+format: safetensors
+quantization: BF16
+expected_size_bytes: 55583189608
+files:
+  - pattern: model-00001-of-00006.safetensors
+    role: weights
+    expected_size_bytes: 9894610424
+    expected_sha256: 55a4ad961830c6dfae435ba5d718c40dcd6169feb26c368007f6ba8c5f0329db
+  - pattern: model-00002-of-00006.safetensors
+    role: weights
+    expected_size_bytes: 9845522504
+    expected_sha256: 74e61e9be6b6f6b02e8e0ae2f7f360f9df2c271860b4f52974ef64bdefcee274
+  - pattern: model-00003-of-00006.safetensors
+    role: weights
+    expected_size_bytes: 9930476808
+    expected_sha256: 3c71faa739ce1f74875363b4ed0136a21da028208f11815471917ac2b17b50a7
+  - pattern: model-00004-of-00006.safetensors
+    role: weights
+    expected_size_bytes: 9899017856
+    expected_sha256: ebf94d3caa061031ce2f183adfca73128e7d7708aa78bebd55e1278358fc2f1b
+  - pattern: model-00005-of-00006.safetensors
+    role: weights
+    expected_size_bytes: 9899017856
+    expected_sha256: c843c9f461d6533eef4141d000b9e5a03fe328825346cbe7a062104b546a6e0c
+  - pattern: model-00006-of-00006.safetensors
+    role: weights
+    expected_size_bytes: 5244961296
+    expected_sha256: f7c99ba96930a0a4a8e7850660912ac71210622aa6e709d7df9af0e641d44451
+  - pattern: model-auxiliary.safetensors
+    role: weights
+    expected_size_bytes: 849400392
+    expected_sha256: 1d8268aa85ace093a561e3e7b63b9d390dac1cd55a90cd55b5ec509c3c9da9fe
+  - pattern: model.safetensors.index.json
+    role: shard_index
+    expected_size_bytes: 112175
+  - pattern: config.json
+    role: config
+    expected_size_bytes: 3764
+  - pattern: generation_config.json
+    role: config
+    expected_size_bytes: 214
+  - pattern: tokenizer.json
+    role: tokenizer
+    expected_size_bytes: 19989492
+    expected_sha256: 6f32ce20dc35f57a7f9ad1eac03525bd7d30f9df8cea6507e958279cc3657706
+  - pattern: tokenizer_config.json
+    role: tokenizer
+    expected_size_bytes: 1125
+  - pattern: chat_template.jinja
+    role: template
+    expected_size_bytes: 8952
+  - pattern: preprocessor_config.json
+    role: config
+    expected_size_bytes: 390
+  - pattern: video_preprocessor_config.json
+    role: config
+    expected_size_bytes: 385
+  - pattern: README.md
+    role: model_card
+    expected_size_bytes: 65975
+requires_remote_code: false
+notes: Full BF16 research checkpoint. It is retained for provenance, conversion, and CPU/offloaded validation rather than direct full-GPU serving on the 24 GB RTX 4090.

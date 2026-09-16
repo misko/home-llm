@@ -75,6 +75,18 @@ class TurnToolPolicy:
                 "Another open-world tool has already returned untrusted content",
             )
 
+    def available_to_model(self, definition: ToolDefinition) -> bool:
+        """Hide exhausted open-world capabilities from later model rounds."""
+
+        effect = definition.effect
+        if self._open_world_closed:
+            return False
+        if effect == "local":
+            return True
+        if self._search_completed and effect in {"open_world_search", "open_world"}:
+            return False
+        return True
+
     def observe(self, definition: ToolDefinition, result: Any) -> None:
         effect = definition.effect
         if effect == "open_world_search":

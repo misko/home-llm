@@ -22,6 +22,7 @@ adapter:
   execution_deadline_seconds: 20
   maximum_redirects: 3
   maximum_response_bytes: 1048576
+  oversized_response_behavior: bounded-prefix
   maximum_text_characters: 60000
   maximum_serialized_result_bytes: 61440
 
@@ -46,6 +47,12 @@ output_schema:
     - title
     - text
     - truncated
+    - source_host
+    - response_bytes_read
+    - response_bytes_declared
+    - transport_truncated
+    - extracted_characters
+    - extraction_quality
   properties:
     url:
       type: string
@@ -67,6 +74,28 @@ output_schema:
       maxLength: 60000
     truncated:
       type: boolean
+    source_host:
+      type: string
+      maxLength: 253
+    response_bytes_read:
+      type: integer
+      minimum: 0
+    response_bytes_declared:
+      type:
+        - integer
+        - "null"
+      minimum: 0
+    transport_truncated:
+      type: boolean
+    extracted_characters:
+      type: integer
+      minimum: 0
+    extraction_quality:
+      type: string
+      enum:
+        - empty
+        - sparse
+        - usable
 
 mcp_projection:
   name: web_fetch

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { portfolioFixture, runtimeFixture } from "../test/fixtures";
 import { ChatPage } from "./ChatPage";
 
@@ -19,6 +19,19 @@ function agentResponse() {
           url: "https://example.com/report",
           snippet: "A deterministic research result.",
         }],
+      },
+    },
+    { type: "tool.started", call_id: "fetch-1", name: "web_fetch", arguments: { url: "https://example.com/report" } },
+    {
+      type: "tool.completed",
+      call_id: "fetch-1",
+      name: "web_fetch",
+      result: {
+        url: "https://example.com/report",
+        title: "Local model report",
+        text: "A bounded extract.",
+        truncated: true,
+        extracted_characters: 15_516,
       },
     },
     { type: "tool.started", call_id: "calc-1", name: "calculator", arguments: { expression: "2 + 2" } },
@@ -51,6 +64,7 @@ function rawChatResponse() {
 }
 
 describe("ChatPage research tools", () => {
+  beforeEach(() => localStorage.clear());
   afterEach(() => vi.unstubAllGlobals());
 
   it("runs the read-only toolset and renders execution evidence and citations", async () => {
@@ -75,6 +89,13 @@ describe("ChatPage research tools", () => {
     const toolSwitch = await screen.findByRole("switch", { name: "Research tools" });
     await waitFor(() => expect(toolSwitch).toBeEnabled());
     await userEvent.click(screen.getByRole("button", { name: "Generation settings" }));
+    const maximumOutput = screen.getByLabelText("Maximum output tokens");
+    expect(maximumOutput).toHaveValue(32_000);
+    expect(maximumOutput).toHaveAttribute("max", "32768");
+    expect(screen.getByText(/32,000 is a ceiling, not a target/)).toHaveTextContent("8,192-token context");
+    fireEvent.change(maximumOutput, { target: { value: "100000" } });
+    expect(maximumOutput).toHaveValue(32_768);
+    fireEvent.change(maximumOutput, { target: { value: "32000" } });
     const instructions = screen.getByLabelText("System prompt");
     expect(instructions).toHaveAttribute("maxlength", "16384");
     fireEvent.change(instructions, { target: { value: "x".repeat(17_000) } });
@@ -91,14 +112,18 @@ describe("ChatPage research tools", () => {
     const toolCard = screen.getByTestId("tool-search-1");
     expect(within(toolCard).getByText("Web Search")).toBeInTheDocument();
     expect(within(toolCard).getByText("Complete")).toBeInTheDocument();
+    const fetchCard = screen.getByTestId("tool-fetch-1");
+    expect(within(fetchCard).getByText("Bounded extract")).toBeInTheDocument();
+    expect(within(fetchCard).getByText("Bounded public extract · 15,516 readable characters")).toBeInTheDocument();
     expect(within(screen.getByTestId("tool-calc-1")).getByText("Runs locally · no network or writes")).toBeInTheDocument();
     const source = screen.getByRole("link", { name: /Local model report/ });
     expect(source).toHaveAttribute("href", "https://example.com/report");
     expect(source).toHaveAttribute("target", "_blank");
+    expect(screen.getByText("A deterministic research result.")).toBeInTheDocument();
     await waitFor(() => expect(agentRequest).toMatchObject({
       toolset: "standard-readonly",
       temperature: 0,
-      max_tokens: 1024,
+      max_tokens: 32_000,
       instructions: "x".repeat(16_384),
       messages: [{ role: "user", content: "Find a current source" }],
     }));
@@ -140,6 +165,7 @@ describe("ChatPage research tools", () => {
     expect(rawRequest).toMatchObject({
       model: "local-fast",
       messages: [{ role: "user", content: "Answer without internet" }],
+      max_tokens: 32_000,
       stream: true,
     });
     client.clear();
@@ -255,6 +281,61 @@ describe("ChatPage research tools", () => {
       expect.objectContaining({ type: "image_url" }),
     ]);
     client.clear();
+  });
+
+  it("creates multiple saved chats and resumes the selected history after remount", async () => {
+    const rawRequests: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/v1/models") {
+        return new Response(JSON.stringify(portfolioFixture()), { headers: { "Content-Type": "application/json" } });
+      }
+      if (path === "/api/v1/runtime") {
+        return new Response(JSON.stringify(runtimeFixture()), { headers: { "Content-Type": "application/json" } });
+      }
+      if (path === "/v1/chat/completions") {
+        rawRequests.push(JSON.parse(String(init?.body)));
+        return rawChatResponse();
+      }
+      throw new Error(`unexpected request ${path}`);
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    const view = render(<QueryClientProvider client={client}><ChatPage /></QueryClientProvider>);
+
+    const composer = await screen.findByLabelText("Message the active model");
+    await userEvent.type(composer, "First saved conversation");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Raw answer.")).toBeInTheDocument();
+
+    const history = screen.getByRole("complementary", { name: "Chat history" });
+    await userEvent.click(within(history).getByRole("button", { name: "New chat" }));
+    expect(screen.queryByText("First saved conversation", { selector: ".message-content" })).not.toBeInTheDocument();
+    await userEvent.type(composer, "Second saved conversation");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(rawRequests).toHaveLength(2));
+
+    await userEvent.click(within(history).getByRole("button", { name: /^First saved conversation/ }));
+    expect(screen.getByText("First saved conversation", { selector: ".message-content" })).toBeInTheDocument();
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem("llm-lab.chat-history.v1") ?? "[]") as unknown[];
+      expect(saved).toHaveLength(2);
+    });
+
+    view.unmount();
+    const resumedClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    render(<QueryClientProvider client={resumedClient}><ChatPage /></QueryClientProvider>);
+    const resumedComposer = await screen.findByLabelText("Message the active model");
+    expect(await screen.findByText("First saved conversation", { selector: ".message-content" })).toBeInTheDocument();
+    await userEvent.type(resumedComposer, "Continue the first chat");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(rawRequests).toHaveLength(3));
+    expect(rawRequests[2].messages).toMatchObject([
+      { role: "user", content: "First saved conversation" },
+      { role: "assistant", content: "Raw answer." },
+      { role: "user", content: "Continue the first chat" },
+    ]);
+    client.clear();
+    resumedClient.clear();
   });
 
   it("stops a session at 64 displayed messages with an actionable reset", async () => {

@@ -99,6 +99,10 @@ class ArtifactFileSelector(StrictModel):
     pattern: str
     role: FileRole
     required: bool = True
+    expected_size_bytes: int | None = Field(default=None, gt=0)
+    expected_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
 
 
 class ArtifactSpec(StrictModel):
@@ -243,9 +247,12 @@ class DeploymentSpec(StrictModel):
     kv_cache_type_k: str = "q8_0"
     kv_cache_type_v: str = "q8_0"
     reasoning_mode: Literal["off", "on", "auto"] = "auto"
+    speculative_mode: Literal["none", "mtp"] = "none"
+    speculative_draft_tokens: int = Field(default=2, ge=1, le=16)
     health_path: str = "/health"
     startup_timeout_seconds: float = Field(default=300.0, gt=0)
     mmproj: str | None = None
+    lora_adapter: str | None = None
     extra_args: tuple[str, ...] = ()
     environment: dict[str, str] = Field(default_factory=dict)
 
@@ -258,6 +265,12 @@ class DeploymentSpec(StrictModel):
                 raise ValueError("a local backend requires image or executable")
         if self.mmproj is not None and self.backend != BackendKind.LLAMA_CPP:
             raise ValueError("mmproj is supported only by llama.cpp deployments")
+        if self.lora_adapter is not None and self.backend != BackendKind.LLAMA_CPP:
+            raise ValueError("lora_adapter is supported only by llama.cpp deployments")
+        if self.speculative_mode != "none" and self.backend != BackendKind.LLAMA_CPP:
+            raise ValueError(
+                "speculative decoding is supported only by llama.cpp deployments"
+            )
         if self.runtime_lock_id is not None and (
             self.image is not None
             or self.backend in {BackendKind.EXTERNAL, BackendKind.MOCK}
@@ -271,7 +284,7 @@ class DeploymentSpec(StrictModel):
             raise ValueError("external deployments cannot define local launch fields")
         return self
 
-    @field_validator("mmproj")
+    @field_validator("mmproj", "lora_adapter")
     @classmethod
     def mmproj_must_be_inside_artifact_view(cls, value: str | None) -> str | None:
         if value is None:
@@ -283,7 +296,7 @@ class DeploymentSpec(StrictModel):
             or candidate.parts[1] != "models"
             or ".." in candidate.parts
         ):
-            raise ValueError("mmproj must be an absolute path below /models")
+            raise ValueError("mmproj/adapter must be an absolute path below /models")
         return value
 
     @field_validator("health_path")

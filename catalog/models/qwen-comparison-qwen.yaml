@@ -1,0 +1,28 @@
+schema_version: 1
+id: qwen-comparison-qwen
+display_name: "Qwen \xB7 matched baseline"
+family: qwen3.8
+description: Matched text-only Qwen comparison artifact. See comparison-provenance.json.
+total_params_b: 27.0
+active_params_b: 27.0
+native_context: 262144
+modalities:
+- text
+capabilities:
+- chat
+- reasoning
+- tools
+- structured_output
+- vision
+- video
+license:
+  name: Apache-2.0
+  url: https://huggingface.co/Qwen/Qwen3.8-27B/blob/main/LICENSE
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+upstream:
+  provider: local
+  repo_type: model
+  revision: fe02a412d95200ac4ef9c6284d5838ad957dfdbc4b8d445d2b365b06fde4a330
+  local_path: /mnt/md2/llm-lab/runs/comparison/qwen-comparison-v0.1/artifacts/qwen

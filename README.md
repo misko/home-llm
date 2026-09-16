@@ -166,7 +166,9 @@ with `LLM_LAB_ALLOWED_HOSTS` (for example,
 authentication boundary; remote deployments still need an authenticated TLS
 proxy and an explicit origin/session policy.
 
-The raw `/v1/*` routes remain caller-managed. For server-managed tools, the
+The raw `/v1/*` routes remain caller-managed: the gateway does not inject the
+agent endpoint's generation default, so clients choose their own `max_tokens`
+value. For server-managed tools, the
 gateway also exposes `POST /api/v1/agent/turns` as a typed SSE stream and
 `GET /api/v1/agent/toolsets` as the reviewed tool catalog. The initial
 `standard-readonly` toolset contains `web_search`, `web_fetch`, `calculator`,
@@ -175,12 +177,20 @@ budgets, source-URL provenance, and open-world chaining controls outside the
 model. `web_search` uses the loopback SearXNG service configured by
 `LLM_LAB_SEARXNG_URL`, which defaults to `http://127.0.0.1:18888`.
 The shipped limits allow one running and one queued agent turn, six model
-rounds, and four serial tool calls per round. A turn has a 180-second deadline;
-each tool call has a 20-second deadline. Web requests additionally have a
-12-second HTTP timeout, a 1 MiB upstream-response cap, and a 60 KiB normalized
-result cap. Source URLs are retained in tool events and console source cards;
-this first version does not reject otherwise valid assistant text solely for
-omitting an inline citation.
+rounds, and four serial tool calls per round. `max_tokens` defaults to 32,000
+when omitted and accepts values from 1 through 32,768. This value is a per-round
+upper bound, not a promised response length: prompt, conversation, and tool
+traffic share the active deployment's context window, and the model may stop
+earlier. The agent also reserves generation allowance against a 196,608-token
+cumulative turn budget. Each model round has a 120-second deadline and the
+whole turn has a 180-second deadline; model-round responses are capped at 2 MiB
+and caller-visible assistant text at 262,144 characters. Any of those limits,
+or the active context window, can end a response before the requested token
+ceiling. Each tool call has a 20-second deadline. Web requests additionally
+have a 12-second HTTP timeout, a 1 MiB upstream-response cap, and a 60 KiB
+normalized result cap. Source URLs are retained in tool events and console
+source cards; this first version does not reject otherwise valid assistant text
+solely for omitting an inline citation.
 
 ```bash
 curl --no-buffer --fail-with-body http://127.0.0.1:14000/api/v1/agent/turns \
@@ -190,7 +200,7 @@ curl --no-buffer --fail-with-body http://127.0.0.1:14000/api/v1/agent/turns \
     "messages": [{"role": "user", "content": "Search for the SearXNG documentation."}],
     "toolset": "standard-readonly",
     "temperature": 0,
-    "max_tokens": 1024
+    "max_tokens": 32000
   }'
 ```
 
@@ -205,7 +215,10 @@ its existing caller-managed multimodal behavior.
 The gateway serves the compiled console at
 [`http://127.0.0.1:14000/ui/`](http://127.0.0.1:14000/ui/). It uses the same
 catalog, runtime manager, durable operation records, and OpenAI-compatible chat
-routes as the CLI and gateway. Model activation is asynchronous: the page
+routes as the CLI and gateway. New console sessions request up to 32,000 output
+tokens by default, with an adjustable ceiling of 32,768. This remains an upper
+bound: the active deployment's shared context window and operational limits can
+end a response sooner. Model activation is asynchronous: the page
 submits one reviewed deployment ID, then polls the durable operation through
 artifact verification, switching, readiness, and any rollback.
 

@@ -1,0 +1,19 @@
+schema_version: 1
+id: qwen-comparison-qwen-ft-fineweb-q4-k-m
+model_id: qwen-comparison-qwen-ft-fineweb
+source:
+  provider: local
+  repo_type: model
+  revision: b277ae969e0b66b3587c649d49d5dbe860e6f9c198f1523bb0ef238adc6335ff
+  local_path: /mnt/md2/llm-lab/runs/comparison/qwen-comparison-v0.1/artifacts/qwen-ft-fineweb
+format: gguf
+quantization: Q4_K_M
+expected_size_bytes: 16810717590
+files:
+- pattern: model-Q4_K_M.gguf
+  role: weights
+  required: true
+- pattern: comparison-provenance.json
+  role: config
+  required: true
+requires_remote_code: false

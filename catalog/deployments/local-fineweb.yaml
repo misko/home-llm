@@ -1,0 +1,23 @@
+schema_version: 1
+id: qwen3.8-27b-fineweb-24h-20260912-4090
+artifact_id: qwen3.8-27b-fineweb-24h-20260912-q4-k-m-lora
+public_alias: local-fineweb
+backend: llama_cpp
+executable: ${LLM_LAB_DATA}/cache/runtimes/llama-cpp-cuda-4090/llama-server
+runtime_lock_id: llama-cpp-cuda-4090
+host: 127.0.0.1
+port: 18080
+context_size: 8192
+parallel: 1
+gpu_layers: all
+flash_attention: true
+kv_cache_type_k: q8_0
+kv_cache_type_v: q8_0
+reasoning_mode: 'off'
+health_path: /health
+startup_timeout_seconds: 300.0
+mmproj: /models/mmproj-Qwen3.8-27B-f16.gguf
+lora_adapter: /models/fineweb-adapter.gguf
+extra_args:
+- --jinja
+environment: {}

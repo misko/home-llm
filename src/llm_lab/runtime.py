@@ -1479,7 +1479,7 @@ def _container_model_path(selected: Path, artifact_root: Path) -> Path:
         ) from exc
 
 
-def _resolve_gguf(artifact_path: Path) -> Path:
+def _resolve_gguf(artifact_path: Path, *, excluded: Path | None = None) -> Path:
     if artifact_path.is_file():
         if artifact_path.suffix.lower() != ".gguf":
             raise DeploymentError(f"llama.cpp artifact is not GGUF: {artifact_path}")
@@ -1490,6 +1490,7 @@ def _resolve_gguf(artifact_path: Path) -> Path:
         path
         for path in artifact_path.rglob("*.gguf")
         if not path.name.lower().startswith(("mmproj", "draft"))
+        and (excluded is None or path.absolute() != excluded.absolute())
     )
     first_shards = [path for path in candidates if "-00001-of-" in path.name]
     if len(first_shards) == 1:
@@ -1691,7 +1692,13 @@ def build_backend_command(
             raise DeploymentError(f"artifact path does not exist: {raw_model_path}")
         mount_root = _artifact_root(raw_model_path)
         if deployment.backend == BackendKind.LLAMA_CPP:
-            model_path = _resolve_gguf(raw_model_path)
+            adapter_path = (
+                Path(_rewrite_model_arg(deployment.lora_adapter, mount_root))
+                if deployment.lora_adapter else None
+            )
+            if adapter_path is not None and not adapter_path.is_file():
+                raise DeploymentError(f"LoRA adapter does not exist: {adapter_path}")
+            model_path = _resolve_gguf(raw_model_path, excluded=adapter_path)
             model_argument = (
                 _container_model_path(model_path, mount_root)
                 if kind == "container"
@@ -1727,6 +1734,12 @@ def build_backend_command(
                     deployment.reasoning_mode,
                 ]
             )
+            if adapter_path is not None:
+                command.extend([
+                    "--lora",
+                    str(_container_model_path(adapter_path, mount_root)
+                        if kind == "container" else adapter_path),
+                ])
             if deployment.mmproj is not None:
                 projector = _expand_deployment_value(deployment.mmproj, resolved_paths)
                 if kind == "process":
@@ -1741,6 +1754,15 @@ def build_backend_command(
                     if not projector_path.is_file():
                         raise DeploymentError(f"mmproj does not exist: {projector_path}")
                 command.extend(["--mmproj", projector])
+            if deployment.speculative_mode == "mtp":
+                command.extend(
+                    [
+                        "--spec-type",
+                        "draft-mtp",
+                        "--spec-draft-n-max",
+                        str(deployment.speculative_draft_tokens),
+                    ]
+                )
         elif deployment.backend == BackendKind.VLLM:
             model_path = raw_model_path.resolve()
             model_argument = (
@@ -2066,6 +2088,8 @@ class RuntimeManager:
                 expected_executable_root=str(self.paths.data_root),
             )
         with self._lock():
+            from .training_runtime import assert_training_idle
+            assert_training_idle(self.paths)
             previous = read_active_state(self.paths)
             if previous is not None:
                 self._verify_saved_artifact(previous)
@@ -2204,6 +2228,8 @@ class RuntimeManager:
 
         self.paths.initialize()
         with self._lock():
+            from .training_runtime import assert_training_idle
+            assert_training_idle(self.paths)
             yield self._status_unlocked(check_health=check_health)
 
     def _status_unlocked(self, *, check_health: bool) -> RuntimeStatus:

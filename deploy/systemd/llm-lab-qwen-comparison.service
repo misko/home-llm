@@ -1,0 +1,26 @@
+[Unit]
+Description=LLM Lab four-model Qwen comparison after FineWeb export
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/home/mouse9911/gits/llms
+Environment=PYTHONPATH=/mnt/md2/llm-lab/runs/comparison/qwen-comparison-v0.1/source-v9/src
+Environment=PYTHONUNBUFFERED=1
+Environment=OMP_NUM_THREADS=4
+Environment=RAYON_NUM_THREADS=4
+Environment=PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ExecStart=/home/mouse9911/gits/llms/.venv/bin/python -m llm_lab.comparison /mnt/md2/llm-lab/runs/comparison/qwen-comparison-v0.1 supervise
+Restart=on-failure
+RestartSec=60
+TimeoutStopSec=120
+KillMode=mixed
+Nice=10
+StandardOutput=append:/mnt/md2/llm-lab/runs/comparison/qwen-comparison-v0.1/service.log
+StandardError=inherit
+
+[Install]
+WantedBy=default.target

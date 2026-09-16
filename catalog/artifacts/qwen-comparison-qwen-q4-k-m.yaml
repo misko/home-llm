@@ -1,0 +1,19 @@
+schema_version: 1
+id: qwen-comparison-qwen-q4-k-m
+model_id: qwen-comparison-qwen
+source:
+  provider: local
+  repo_type: model
+  revision: fe02a412d95200ac4ef9c6284d5838ad957dfdbc4b8d445d2b365b06fde4a330
+  local_path: /mnt/md2/llm-lab/runs/comparison/qwen-comparison-v0.1/artifacts/qwen
+format: gguf
+quantization: Q4_K_M
+expected_size_bytes: 16810718421
+files:
+- pattern: model-Q4_K_M.gguf
+  role: weights
+  required: true
+- pattern: comparison-provenance.json
+  role: config
+  required: true
+requires_remote_code: false

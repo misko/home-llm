@@ -104,6 +104,8 @@ def _deployment(
     mmproj: str | None = None,
     extra_args: tuple[str, ...] = (),
     reasoning_mode: str = "auto",
+    speculative_mode: str = "none",
+    speculative_draft_tokens: int = 2,
 ) -> DeploymentSpec:
     return DeploymentSpec(
         id=deployment_id,
@@ -118,6 +120,8 @@ def _deployment(
         mmproj=mmproj,
         extra_args=extra_args,
         reasoning_mode=reasoning_mode,
+        speculative_mode=speculative_mode,
+        speculative_draft_tokens=speculative_draft_tokens,
     )
 
 
@@ -659,6 +663,8 @@ def test_llama_host_and_container_commands_map_artifact_paths(tmp_path: Path) ->
         executable="${LLM_LAB_DATA}/cache/llama.cpp/llama-server",
         mmproj="/models/mmproj-model-f16.gguf",
         reasoning_mode="off",
+        speculative_mode="mtp",
+        speculative_draft_tokens=2,
     )
     host_plan = build_backend_command(host, artifact, paths=paths)
     assert host_plan.kind == "process"
@@ -669,6 +675,12 @@ def test_llama_host_and_container_commands_map_artifact_paths(tmp_path: Path) ->
     assert str(projector.resolve()) in host_plan.command
     reasoning_index = host_plan.command.index("--reasoning")
     assert host_plan.command[reasoning_index + 1] == "off"
+    assert host_plan.command[
+        host_plan.command.index("--spec-type") + 1
+    ] == "draft-mtp"
+    assert host_plan.command[
+        host_plan.command.index("--spec-draft-n-max") + 1
+    ] == "2"
 
     container = _deployment(
         "llama-container",

@@ -1,0 +1,22 @@
+schema_version: 1
+id: qwen3.6-27b-fable-fusion-711
+display_name: Qwen3.6 27B Fable Fusion 711
+family: qwen3.6
+description: Community multi-stage Qwen3.6 fine-tune for general chat, reasoning, coding, tools, and vision.
+total_params_b: 27.0
+active_params_b: 27.0
+native_context: 262144
+modalities: [text, image]
+capabilities: [chat, reasoning, tools, structured_output, vision, coding_agent]
+license:
+  name: Apache-2.0
+  url: https://huggingface.co/Qwen/Qwen3.6-27B/blob/6a9e13bd6fc8f0983b9b99948120bc37f49c13e9/LICENSE
+  commercial_use: true
+  osi_approved: true
+  acceptance_required: false
+  notes: The fine-tune and GGUF model cards declare Apache-2.0; the linked immutable license file is from the Qwen3.6 base checkpoint.
+upstream:
+  provider: huggingface
+  repo_id: DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP
+  repo_type: model
+  revision: e3b8b67b5ee28d887d1f129cec42fd759e4e1261

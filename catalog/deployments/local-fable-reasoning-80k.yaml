@@ -1,0 +1,23 @@
+schema_version: 1
+id: qwen3.6-27b-fable-fusion-711-4090-80k-reasoning
+artifact_id: qwen3.6-27b-fable-fusion-711-mtp-q4-k-m
+public_alias: local-fable-reasoning-80k
+backend: llama_cpp
+executable: ${LLM_LAB_DATA}/cache/runtimes/llama-cpp-cuda-4090/llama-server
+runtime_lock_id: llama-cpp-cuda-4090
+host: 127.0.0.1
+port: 18089
+context_size: 81920
+parallel: 1
+gpu_layers: all
+flash_attention: true
+kv_cache_type_k: q4_0
+kv_cache_type_v: q4_0
+reasoning_mode: "on"
+speculative_mode: mtp
+speculative_draft_tokens: 2
+health_path: /health
+startup_timeout_seconds: 300
+mmproj: /models/mmproj-F16.gguf
+extra_args:
+  - --jinja
