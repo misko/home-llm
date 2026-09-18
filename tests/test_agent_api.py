@@ -21,6 +21,7 @@ from llm_lab.runtime import (
 from llm_lab.schema import BackendKind, DeploymentSpec
 from llm_lab.tooling.builtins import create_builtin_registry
 from llm_lab.tooling.errors import ToolPolicyError
+from llm_lab.tooling.openrouter import OpenRouterProvider, OpenRouterSettings
 from llm_lab.tooling.orchestrator import AgentLimits, AgentRunner
 from llm_lab.tooling.registry import ToolDefinition, ToolRegistry, ToolsetDefinition
 from llm_lab.tooling.schema import AgentTurnRequest
@@ -156,6 +157,14 @@ def test_agent_enabled_tools_are_bounded_and_unique() -> None:
         AgentTurnRequest.model_validate({**payload, "enabled_tools": ["web_search", "web_search"]})
     with pytest.raises(ValueError, match="invalid tool name"):
         AgentTurnRequest.model_validate({**payload, "enabled_tools": ["not a tool"]})
+
+
+def test_openrouter_tool_schema_lists_only_approved_models() -> None:
+    provider = OpenRouterProvider(
+        OpenRouterSettings(api_key="test-key", allowed_models=("z-ai/glm-5.3", "qwen/qwen3.6-27b"))
+    )
+    model = provider.tools[0].parameters["properties"]["model"]
+    assert model["enum"] == ["z-ai/glm-5.3", "qwen/qwen3.6-27b"]
 
 
 @pytest.mark.asyncio

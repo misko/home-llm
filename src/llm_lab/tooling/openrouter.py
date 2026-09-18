@@ -65,8 +65,8 @@ class OpenRouterProvider(ToolProvider):
         closed = {"additionalProperties": False}
         return (ToolDefinition(
             name="openrouter_delegate",
-            description="Ask one operator-approved remote OpenRouter model for a bounded second opinion. Send only the minimum task context needed; this sends the prompt to a third party.",
-            parameters={"type": "object", **closed, "required": ["model", "prompt"], "properties": {"model": {"type": "string", "maxLength": 128}, "prompt": {"type": "string", "minLength": 1, "maxLength": _MAX_PROMPT_CHARACTERS}}},
+            description="Ask one operator-approved remote OpenRouter model for a bounded second opinion. Choose model from the supplied enum; do not invent provider or model IDs. Send only the minimum task context needed; this sends the prompt to a third party.",
+            parameters={"type": "object", **closed, "required": ["model", "prompt"], "properties": {"model": {"type": "string", "maxLength": 128, "enum": list(self.settings.allowed_models), "description": "One of the operator-approved OpenRouter model IDs."}, "prompt": {"type": "string", "minLength": 1, "maxLength": _MAX_PROMPT_CHARACTERS}}},
             output_schema={"type": "object", **closed, "required": ["model", "content", "usage"], "properties": {"model": {"type": "string"}, "content": {"type": "string", "maxLength": _MAX_OUTPUT_CHARACTERS}, "usage": {"type": "object", **closed, "properties": {"prompt_tokens": {"type": "integer", "minimum": 0}, "completion_tokens": {"type": "integer", "minimum": 0}, "total_tokens": {"type": "integer", "minimum": 0}}}}},
             handler=self.delegate,
             # It is a read-only, bounded request in a dedicated toolset. The
