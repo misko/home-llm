@@ -22,6 +22,7 @@ import httpx
 
 from .errors import ToolExecutionError, ToolPolicyError
 from .registry import ToolDefinition, ToolProvider, ToolRegistry, ToolsetDefinition
+from .python_sandbox import PythonSandboxProvider, PythonSandboxSettings
 from .workspace import WorkspaceSettings, WorkspaceToolProvider
 
 
@@ -1032,6 +1033,20 @@ def create_builtin_registry(
                     "Writes are proposals and require explicit approval."
                 ),
                 tools=("workspace_list", "workspace_read", "workspace_write_proposal"),
+            )
+        )
+    sandbox = PythonSandboxProvider(PythonSandboxSettings.from_environment())
+    registry.register_provider(sandbox)
+    if sandbox.enabled:
+        registry.register_toolset(
+            ToolsetDefinition(
+                id="python-sandbox",
+                name="Python sandbox",
+                description=(
+                    "Disposable, networkless Python execution. Host workspace changes "
+                    "are staged and never committed automatically."
+                ),
+                tools=("python_sandbox",),
             )
         )
     return registry
