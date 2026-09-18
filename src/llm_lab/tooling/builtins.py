@@ -1031,9 +1031,9 @@ def create_builtin_registry(
                 name="Workspace files",
                 description=(
                     "Bounded access to one operator-approved workspace. "
-                    "Writes are proposals and require explicit approval."
+                    "Reads are bounded; writes require the chat's explicit local-file permission."
                 ),
-                tools=("workspace_list", "workspace_read", "workspace_write_proposal"),
+                tools=("workspace_list", "workspace_read", "workspace_write_proposal", "workspace_write"),
             )
         )
     sandbox = PythonSandboxProvider(PythonSandboxSettings.from_environment())
@@ -1063,7 +1063,7 @@ def create_builtin_registry(
         )
     combined_tools = ["web_search", "web_fetch", "calculator", "current_time"]
     if workspace.enabled:
-        combined_tools.extend(("workspace_list", "workspace_read", "workspace_write_proposal"))
+        combined_tools.extend(("workspace_list", "workspace_read", "workspace_write_proposal", "workspace_write"))
     if sandbox.enabled:
         combined_tools.append("python_sandbox")
     if openrouter.enabled:

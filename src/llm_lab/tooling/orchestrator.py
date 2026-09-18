@@ -870,7 +870,8 @@ class AgentRunner:
                 else:
                     try:
                         definition = self.executor.authorize(
-                            name, arguments, permitted=permitted
+                            name, arguments, permitted=permitted,
+                            allow_workspace_writes=request.allow_workspace_writes,
                         )
                         turn_policy.before(definition, arguments)
                     except ToolingError as exc:
@@ -894,7 +895,8 @@ class AgentRunner:
                 else:
                     assert arguments is not None and definition is not None
                     execution = await self.executor.execute(
-                        name, arguments, permitted=permitted
+                        name, arguments, permitted=permitted,
+                        allow_workspace_writes=request.allow_workspace_writes,
                     )
                     execution_value = execution.value
                     execution_error = execution.error

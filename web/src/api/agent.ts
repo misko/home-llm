@@ -46,6 +46,7 @@ interface AgentOptions {
   maxTokens: number;
   maxToolRounds?: number;
   enabledTools?: string[];
+  allowWorkspaceWrites?: boolean;
   systemPrompt?: string;
   toolset?: string;
 }
@@ -218,6 +219,7 @@ export async function streamAgentTurn(
       max_tokens: options.maxTokens,
       max_rounds: options.maxToolRounds ?? 128,
       enabled_tools: options.enabledTools,
+      allow_workspace_writes: options.allowWorkspaceWrites === true,
       stream: true,
     }),
     signal,

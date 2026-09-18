@@ -120,7 +120,8 @@ describe("ChatPage research tools", () => {
     expect(screen.getByText("A deterministic research result.")).toBeInTheDocument();
     await waitFor(() => expect(agentRequest).toMatchObject({
       toolset: "assistant-tools",
-      enabled_tools: ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write_proposal", "python_sandbox", "openrouter_delegate"],
+      enabled_tools: ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write", "python_sandbox", "openrouter_delegate"],
+      allow_workspace_writes: true,
       temperature: 0,
       max_tokens: 32_000,
       instructions: "x".repeat(16_384),

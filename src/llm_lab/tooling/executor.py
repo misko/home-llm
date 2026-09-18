@@ -40,9 +40,13 @@ class ToolExecutor:
         arguments: Mapping[str, Any],
         *,
         permitted: tuple[str, ...],
+        allow_workspace_writes: bool = False,
     ) -> ToolExecution:
         try:
-            definition = self.authorize(name, arguments, permitted=permitted)
+            definition = self.authorize(
+                name, arguments, permitted=permitted,
+                allow_workspace_writes=allow_workspace_writes,
+            )
             try:
                 async with asyncio.timeout(
                     definition.execution_deadline_seconds or self.timeout_seconds
@@ -89,8 +93,12 @@ class ToolExecutor:
         arguments: Mapping[str, Any],
         *,
         permitted: tuple[str, ...],
+        allow_workspace_writes: bool = False,
     ) -> ToolDefinition:
-        definition = self.registry.get(name, permitted=permitted)
+        definition = self.registry.get(
+            name, permitted=permitted,
+            allow_workspace_writes=allow_workspace_writes,
+        )
         try:
             definition.validator.validate(dict(arguments))
         except jsonschema.ValidationError as exc:

@@ -25,7 +25,8 @@ test("executes a read-only web search and renders its cited final answer", async
   expect(request).toMatchObject({
     instructions: "Use concise language and cite sources.",
     toolset: "assistant-tools",
-    enabled_tools: ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write_proposal", "python_sandbox", "openrouter_delegate"],
+    enabled_tools: ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write", "python_sandbox", "openrouter_delegate"],
+    allow_workspace_writes: true,
     temperature: 0,
     max_tokens: 32_000,
     stream: true,

@@ -111,6 +111,16 @@ class WorkspaceToolProvider(ToolProvider):
                 handler=self.propose_write,
                 available=self.enabled,
             ),
+            ToolDefinition(
+                name="workspace_write",
+                description="Write one bounded UTF-8 text file in the approved workspace. This is available only when the chat's Local file access setting explicitly permits writes.",
+                parameters={"type": "object", **closed, "required": ["path", "content"], "properties": {"path": {"type": "string", "minLength": 1, "maxLength": 512}, "content": {"type": "string", "maxLength": _MAX_WRITE_BYTES}, "expected_sha256": {"type": ["string", "null"], "maxLength": 64}}},
+                output_schema={"type": "object", **closed, "required": ["workspace", "path", "sha256", "bytes_written", "approval_required"], "properties": {"workspace": {"type": "string"}, "path": {"type": "string"}, "sha256": {"type": "string"}, "bytes_written": {"type": "integer", "minimum": 0}, "approval_required": {"type": "boolean", "const": False}}},
+                handler=self.write_file,
+                read_only=False,
+                risk="medium",
+                available=self.enabled,
+            ),
         )
 
     def _parts(self, path: Any, *, allow_empty: bool = False) -> tuple[str, ...]:
@@ -219,6 +229,12 @@ class WorkspaceToolProvider(ToolProvider):
 
     async def approve(self, proposal_id: str) -> dict[str, Any]:
         return await asyncio.to_thread(self._approve, proposal_id)
+
+    async def write_file(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        """Commit a reviewed write when the turn's server-side policy permits it."""
+        proposal = await self.propose_write(arguments)
+        committed = await self.approve(proposal["proposal_id"])
+        return {**committed, "approval_required": False}
 
     def _approve(self, proposal_id: str) -> dict[str, Any]:
         with self._proposal_lock:

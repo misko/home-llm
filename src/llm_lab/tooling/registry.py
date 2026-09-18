@@ -210,7 +210,13 @@ class ToolRegistry:
             if self._tools[name].available
         )
 
-    def get(self, name: str, *, permitted: Sequence[str]) -> ToolDefinition:
+    def get(
+        self,
+        name: str,
+        *,
+        permitted: Sequence[str],
+        allow_workspace_writes: bool = False,
+    ) -> ToolDefinition:
         if name not in permitted:
             raise ToolPolicyError(
                 "tool_not_permitted",
@@ -229,7 +235,10 @@ class ToolRegistry:
                 f"Tool {name!r} is not configured",
                 retryable=True,
             )
-        if not definition.read_only or definition.risk != "low":
+        if (
+            not definition.read_only
+            or definition.risk != "low"
+        ) and not (allow_workspace_writes and name == "workspace_write"):
             raise ToolPolicyError(
                 "tool_requires_approval",
                 f"Tool {name!r} cannot run in an automatic read-only turn",

@@ -71,3 +71,36 @@ async def test_workspace_tools_reject_escapes_symlinks_and_unapproved_overwrite(
         assert (root / "exists.txt").read_text() == "before"
     finally:
         await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_workspace_write_requires_turn_permission_and_stays_bounded(tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    provider = WorkspaceToolProvider(WorkspaceSettings(root=root))
+    registry = ToolRegistry()
+    registry.register_provider(provider)
+    registry.register_toolset(ToolsetDefinition(
+        id="workspace-files", name="Workspace", description="Workspace", tools=tuple(tool.name for tool in provider.tools),
+    ))
+    executor = ToolExecutor(registry)
+    permitted = tuple(tool.name for tool in registry.resolve("workspace-files"))
+    try:
+        denied = await executor.execute(
+            "workspace_write", {"path": "draft.txt", "content": "bounded write"}, permitted=permitted,
+        )
+        assert not denied.ok
+        assert denied.error and denied.error.code == "tool_requires_approval"
+        committed = await executor.execute(
+            "workspace_write", {"path": "draft.txt", "content": "bounded write"}, permitted=permitted,
+            allow_workspace_writes=True,
+        )
+        assert committed.ok and committed.value["approval_required"] is False
+        assert (root / "draft.txt").read_text() == "bounded write"
+        escaped = await executor.execute(
+            "workspace_write", {"path": "../outside.txt", "content": "no"}, permitted=permitted,
+            allow_workspace_writes=True,
+        )
+        assert not escaped.ok and escaped.error and escaped.error.code == "workspace_path_denied"
+    finally:
+        await provider.aclose()

@@ -124,8 +124,8 @@ const server = createServer((request, response) => {
         json(response, 400, { error: { code: "invalid_toolset", message: "Expected the assistant toolset." } });
         return;
       }
-      const expectedTools = ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write_proposal", "python_sandbox", "openrouter_delegate"];
-      if (JSON.stringify(turn.enabled_tools) !== JSON.stringify(expectedTools)) {
+      const expectedTools = ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write", "python_sandbox", "openrouter_delegate"];
+      if (JSON.stringify(turn.enabled_tools) !== JSON.stringify(expectedTools) || turn.allow_workspace_writes !== true) {
         json(response, 400, { error: { code: "invalid_enabled_tools", message: "Expected the enabled assistant tool allow-list." } });
         return;
       }

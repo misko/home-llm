@@ -42,6 +42,7 @@ describe("streamAgentTurn", () => {
         systemPrompt: "Cite sources.",
         toolset: "assistant-tools",
         enabledTools: ["web_search", "python_sandbox"],
+        allowWorkspaceWrites: true,
       },
     );
 
@@ -49,6 +50,7 @@ describe("streamAgentTurn", () => {
       instructions: "Cite sources.",
       toolset: "assistant-tools",
       enabled_tools: ["web_search", "python_sandbox"],
+      allow_workspace_writes: true,
       temperature: 0.2,
       max_tokens: 256,
       stream: true,

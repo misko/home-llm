@@ -142,8 +142,10 @@ function ToolExecutionCard({ tool, onApproveWorkspaceWrite }: {
     ? "Runs locally · no network or writes"
     : tool.name === "python_sandbox"
       ? "Disposable Python · no network or host writes"
-    : tool.name === "web_search" || tool.name === "web_fetch"
+      : tool.name === "web_search" || tool.name === "web_fetch"
       ? "Sends queries and requested public pages to the internet · no writes"
+      : tool.name === "workspace_write"
+        ? "Writes only inside the configured workspace · path and size limits apply"
       : "Read-only tool · no writes");
   const statusClass = boundedFetch ? "bounded" : tool.status;
   const proposalId = workspaceProposalId(tool);
@@ -480,7 +482,7 @@ export function ChatPage() {
           setMessages((current) => current.map((message) => message.id === assistantId
             ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources }
             : message));
-        }, { temperature, maxTokens, maxToolRounds, systemPrompt, toolset: ASSISTANT_TOOLSET, enabledTools: ["web_search", "web_fetch", "calculator", "current_time", ...(workspaceEnabled ? ["workspace_list", "workspace_read", "workspace_write_proposal"] : []), ...(pythonEnabled ? ["python_sandbox"] : []), ...(openRouterEnabled ? ["openrouter_delegate"] : [])] });
+        }, { temperature, maxTokens, maxToolRounds, systemPrompt, toolset: ASSISTANT_TOOLSET, allowWorkspaceWrites: workspaceEnabled, enabledTools: ["web_search", "web_fetch", "calculator", "current_time", ...(workspaceEnabled ? ["workspace_list", "workspace_read", "workspace_write"] : []), ...(pythonEnabled ? ["python_sandbox"] : []), ...(openRouterEnabled ? ["openrouter_delegate"] : [])] });
       } else {
         await streamChat(activeAlias, requestMessages, controller.signal, (update) => {
           assistantHasEvidence ||= Boolean(update.content || update.reasoning || update.toolCalls.length);
@@ -701,7 +703,7 @@ export function ChatPage() {
           <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => updateSettings({ temperature: Number(event.target.value) })} /></label>
           <label>Maximum output tokens<input type="number" min="1" max={maximumOutputTokens} value={maxTokens} onChange={(event) => updateSettings({ maxTokens: Math.min(maximumOutputTokens, Math.max(1, Math.trunc(Number(event.target.value) || 1))) })} /></label>
           <label>Maximum tool rounds <output>{maxToolRounds === 128 ? "Unlimited (128)" : maxToolRounds}</output><input type="range" min="1" max="128" step="1" value={maxToolRounds} onChange={(event) => updateSettings({ maxToolRounds: Number(event.target.value) })} /></label>
-          <label><input type="checkbox" checked={workspaceEnabled} onChange={(event) => updateSettings({ workspaceEnabled: event.target.checked })} /> Local file access · write proposals need approval</label>
+          <label><input type="checkbox" checked={workspaceEnabled} onChange={(event) => updateSettings({ workspaceEnabled: event.target.checked })} /> Local file access · auto-approve bounded workspace writes</label>
           <label><input type="checkbox" checked={pythonEnabled} onChange={(event) => updateSettings({ pythonEnabled: event.target.checked })} /> Python sandbox · no network or host writes</label>
           <label><input type="checkbox" checked={openRouterEnabled} onChange={(event) => updateSettings({ openRouterEnabled: event.target.checked })} /> OpenRouter delegation · prompt leaves this machine</label>
           <p className="modal-note">

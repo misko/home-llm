@@ -99,6 +99,7 @@ class AgentTurnRequest(AgentDTO):
     max_tokens: int = Field(default=32_000, ge=1, le=32_768)
     max_rounds: int | None = Field(default=None, ge=1, le=128)
     enabled_tools: tuple[str, ...] | None = Field(default=None, max_length=16)
+    allow_workspace_writes: bool = False
     stream: Literal[True] = True
 
     @model_validator(mode="after")
