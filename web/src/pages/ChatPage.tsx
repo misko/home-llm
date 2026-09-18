@@ -233,7 +233,7 @@ export function ChatPage() {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(() => new URLSearchParams(window.location.search).get("settings") === "conversation");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [reasoningByMessage, setReasoningByMessage] = useState<Record<string, string>>({});
   const [hasEarlierMessages, setHasEarlierMessages] = useState(false);

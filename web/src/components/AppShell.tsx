@@ -18,9 +18,10 @@ import { registerConsoleWebMcp } from "../webmcp";
 const navigation = [
   ["Chat", "/", MessageSquareText],
   ["Models", "/models", Boxes],
-  ["Benchmarks", "/benchmarks", BarChart3],
+  ["Benchmarks", "/benchmarks", BarChart3, "desktop-only"],
   ["Storage", "/storage", HardDrive],
   ["System", "/system", Settings2],
+  ["Conversation", "/?settings=conversation", Settings2, "mobile-only"],
 ] as const;
 
 export function AppShell() {
@@ -48,11 +49,11 @@ export function AppShell() {
           <span>LLM LAB</span>
         </button>
         <nav aria-label="Primary navigation">
-          {navigation.map(([label, path, Icon]) => (
+          {navigation.map(([label, path, Icon, visibility]) => (
             <NavLink
               to={path}
               end={path === "/"}
-              className={({ isActive }) => isActive ? "nav-item active" : "nav-item"}
+              className={({ isActive }) => `${isActive ? "nav-item active" : "nav-item"}${visibility ? ` ${visibility}` : ""}`}
               key={label}
               onClick={() => setRailOpen(false)}
             >
