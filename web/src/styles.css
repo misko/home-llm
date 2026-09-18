@@ -383,9 +383,9 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .composer-bar { padding: 10px 11px 11px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(255,255,255,.04); }
 .composer-bar > div { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .composer-meta { color: #708096; font: 11px "SFMono-Regular", Consolas, monospace; }
-.composer-settings { width: 29px; height: 29px; display: grid; place-items: center; color: #9fb2c9; border: 1px solid transparent; border-radius: 7px; background: transparent; cursor: pointer; }
-.composer-settings:hover { color: #e7f2ff; border-color: #304866; background: rgba(105,169,255,.08); }
-.composer-settings:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.composer .composer-settings { width: 29px; min-height: 29px; height: 29px; padding: 0; display: grid; place-items: center; color: #9fb2c9; border: 1px solid transparent; border-radius: 7px; background: transparent; box-shadow: none; cursor: pointer; }
+.composer .composer-settings:hover { color: #e7f2ff; border-color: #304866; background: rgba(105,169,255,.08); }
+.composer .composer-settings:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .attach-button { padding: 6px 8px; display: inline-flex; align-items: center; gap: 5px; color: #aabbd1; border-radius: 7px; cursor: pointer; font-size: 12px; }
 .attach-button:hover { background: rgba(255,255,255,.04); }
 .attach-button.disabled { opacity: .35; cursor: not-allowed; }
