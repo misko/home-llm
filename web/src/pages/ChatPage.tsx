@@ -20,7 +20,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { approveWorkspaceWrite, OPENROUTER_TOOLSET, PYTHON_SANDBOX_TOOLSET, RESEARCH_TOOLSET, streamAgentTurn, WORKSPACE_TOOLSET } from "../api/agent";
+import { approveWorkspaceWrite, ASSISTANT_TOOLSET, streamAgentTurn } from "../api/agent";
 import { streamChat } from "../api/chat";
 import { createClientId } from "../api/id";
 import type { AgentSource, AgentToolExecution, ChatAttachment, ChatMessage, ToolCall } from "../api/types";
@@ -66,7 +66,7 @@ function newChat(): SavedChat {
       maxTokens: defaultMaximumOutputTokens,
       maxToolRounds: 128,
       systemPrompt: "",
-      toolsEnabled: false,
+      toolsEnabled: true, workspaceEnabled: true, pythonEnabled: true, openRouterEnabled: true,
     },
   };
 }
@@ -251,7 +251,9 @@ export function ChatPage() {
   const maxToolRounds = activeChat?.settings.maxToolRounds ?? 128;
   const systemPrompt = activeChat?.settings.systemPrompt ?? "";
   const toolsEnabled = activeChat?.settings.toolsEnabled ?? false;
-  const toolset = activeChat?.settings.toolset ?? RESEARCH_TOOLSET;
+  const workspaceEnabled = activeChat?.settings.workspaceEnabled ?? true;
+  const pythonEnabled = activeChat?.settings.pythonEnabled ?? true;
+  const openRouterEnabled = activeChat?.settings.openRouterEnabled ?? true;
 
   useEffect(() => {
     let cancelled = false;
@@ -478,7 +480,7 @@ export function ChatPage() {
           setMessages((current) => current.map((message) => message.id === assistantId
             ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources }
             : message));
-        }, { temperature, maxTokens, maxToolRounds, systemPrompt, toolset });
+        }, { temperature, maxTokens, maxToolRounds, systemPrompt, toolset: ASSISTANT_TOOLSET, enabledTools: ["web_search", "web_fetch", "calculator", "current_time", ...(workspaceEnabled ? ["workspace_list", "workspace_read", "workspace_write_proposal"] : []), ...(pythonEnabled ? ["python_sandbox"] : []), ...(openRouterEnabled ? ["openrouter_delegate"] : [])] });
       } else {
         await streamChat(activeAlias, requestMessages, controller.signal, (update) => {
           assistantHasEvidence ||= Boolean(update.content || update.reasoning || update.toolCalls.length);
@@ -599,7 +601,7 @@ export function ChatPage() {
           <div className="welcome-card">
             <span className="orb"><BrainCircuit size={30} /></span>
             <h2>What are we working on?</h2>
-            <p>This chat is saved in this browser so you can return and continue later. The active deployment can stream text{supportsImages ? " and inspect images" : ""}. {supportsTools ? "Research tools are off by default; enabling them sends queries and requested public pages to the internet · no writes." : ""}</p>
+            <p>This chat is saved in this browser so you can return and continue later. The active deployment can stream text{supportsImages ? " and inspect images" : ""}. {supportsTools ? "Assistant tools are enabled by default; adjust local files, Python, and OpenRouter permissions in generation settings." : ""}</p>
             <div className="prompt-grid">
               {prompts.map(([label, prompt], index) => (
                 <button key={label} onClick={() => setDraft(prompt)}>
@@ -668,7 +670,7 @@ export function ChatPage() {
             </label>
             <label
               className={"tool-toggle " + (toolsEnabled && supportsTools ? "enabled " : "") + (!supportsTools ? "disabled" : "")}
-              title={supportsTools ? "Sends queries and requested public pages to the internet · no writes" : "This deployment does not support tools"}
+              title={supportsTools ? "Uses the tool permissions selected in generation settings" : "This deployment does not support tools"}
             >
               <input
                 type="checkbox"
@@ -681,8 +683,8 @@ export function ChatPage() {
               <span className="toggle-track" aria-hidden="true"><span /></span>
               <ShieldCheck size={15} />
               <span className="tool-toggle-copy">
-                <strong>{toolset === WORKSPACE_TOOLSET ? "Workspace files" : toolset === PYTHON_SANDBOX_TOOLSET ? "Python sandbox" : toolset === OPENROUTER_TOOLSET ? "OpenRouter delegation" : "Research tools"}</strong>
-                <small>{supportsTools ? toolset === WORKSPACE_TOOLSET ? "Reads one approved workspace; writes need your approval" : toolset === PYTHON_SANDBOX_TOOLSET ? "Runs disposable Python with no network or host writes" : toolset === OPENROUTER_TOOLSET ? "One approved remote model call; prompt leaves this machine" : "Sends queries and requested public pages to the internet · no writes" : "Unavailable for this deployment"}</small>
+                <strong>Assistant tools</strong>
+                <small>{supportsTools ? "Web research plus the permissions selected in settings" : "Unavailable for this deployment"}</small>
               </span>
             </label>
             <span className="composer-meta">Temperature {temperature} · Max {maxTokens}</span>
@@ -699,12 +701,9 @@ export function ChatPage() {
           <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => updateSettings({ temperature: Number(event.target.value) })} /></label>
           <label>Maximum output tokens<input type="number" min="1" max={maximumOutputTokens} value={maxTokens} onChange={(event) => updateSettings({ maxTokens: Math.min(maximumOutputTokens, Math.max(1, Math.trunc(Number(event.target.value) || 1))) })} /></label>
           <label>Maximum tool rounds <output>{maxToolRounds === 128 ? "Unlimited (128)" : maxToolRounds}</output><input type="range" min="1" max="128" step="1" value={maxToolRounds} onChange={(event) => updateSettings({ maxToolRounds: Number(event.target.value) })} /></label>
-          <label>Tool access<select value={toolset} onChange={(event) => updateSettings({ toolset: event.target.value === WORKSPACE_TOOLSET ? WORKSPACE_TOOLSET : event.target.value === PYTHON_SANDBOX_TOOLSET ? PYTHON_SANDBOX_TOOLSET : event.target.value === OPENROUTER_TOOLSET ? OPENROUTER_TOOLSET : RESEARCH_TOOLSET })}>
-            <option value={RESEARCH_TOOLSET}>Public research · read-only</option>
-            <option value={WORKSPACE_TOOLSET}>Approved workspace · writes need approval</option>
-            <option value={PYTHON_SANDBOX_TOOLSET}>Python sandbox · no network or host writes</option>
-            <option value={OPENROUTER_TOOLSET}>OpenRouter delegation · sends prompt to a remote model</option>
-          </select></label>
+          <label><input type="checkbox" checked={workspaceEnabled} onChange={(event) => updateSettings({ workspaceEnabled: event.target.checked })} /> Local file access · write proposals need approval</label>
+          <label><input type="checkbox" checked={pythonEnabled} onChange={(event) => updateSettings({ pythonEnabled: event.target.checked })} /> Python sandbox · no network or host writes</label>
+          <label><input type="checkbox" checked={openRouterEnabled} onChange={(event) => updateSettings({ openRouterEnabled: event.target.checked })} /> OpenRouter delegation · prompt leaves this machine</label>
           <p className="modal-note">
             {defaultMaximumOutputTokens.toLocaleString()} is a ceiling, not a target. Prompt, history, reasoning, and reply share the active {runtime.data?.context_size?.toLocaleString() ?? "model"}-token context; tool-enabled turns also stop at the configured round cap or total deadline.
           </p>

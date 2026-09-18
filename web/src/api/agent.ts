@@ -10,6 +10,7 @@ export const RESEARCH_TOOLSET = "standard-readonly";
 export const WORKSPACE_TOOLSET = "workspace-files";
 export const PYTHON_SANDBOX_TOOLSET = "python-sandbox";
 export const OPENROUTER_TOOLSET = "openrouter-delegation";
+export const ASSISTANT_TOOLSET = "assistant-tools";
 const MAX_SERVER_ERROR_MESSAGE = 512;
 const MAX_INSTRUCTIONS_LENGTH = 16_384;
 const POLICY_BLOCK_CODES = new Set([
@@ -44,6 +45,7 @@ interface AgentOptions {
   temperature: number;
   maxTokens: number;
   maxToolRounds?: number;
+  enabledTools?: string[];
   systemPrompt?: string;
   toolset?: string;
 }
@@ -215,6 +217,7 @@ export async function streamAgentTurn(
       temperature: options.temperature,
       max_tokens: options.maxTokens,
       max_rounds: options.maxToolRounds ?? 128,
+      enabled_tools: options.enabledTools,
       stream: true,
     }),
     signal,

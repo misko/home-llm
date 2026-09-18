@@ -1,6 +1,6 @@
 import type { ChatMessage } from "../api/types";
 
-export interface ChatSettings { temperature: number; maxTokens: number; maxToolRounds?: number; systemPrompt: string; toolsEnabled: boolean; toolset?: "standard-readonly" | "workspace-files" | "python-sandbox" | "openrouter-delegation"; }
+export interface ChatSettings { temperature: number; maxTokens: number; maxToolRounds?: number; systemPrompt: string; toolsEnabled: boolean; workspaceEnabled?: boolean; pythonEnabled?: boolean; openRouterEnabled?: boolean; toolset?: "standard-readonly" | "workspace-files" | "python-sandbox" | "openrouter-delegation"; }
 export interface SavedChat { id: string; title: string; createdAt: string; updatedAt: string; messages: ChatMessage[]; settings: ChatSettings; messageCount?: number; latestPreview?: string; }
 export interface MessagePage { messages: ChatMessage[]; hasMore: boolean; }
 type ConversationRecord = Omit<SavedChat, "messages">;

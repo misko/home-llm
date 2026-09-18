@@ -5,17 +5,15 @@ test("executes a read-only web search and renders its cited final answer", async
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await page.goto("/ui/");
-  await page.getByRole("button", { name: "Generation settings" }).click();
+  await page.getByRole("button", { name: "Generation settings", exact: true }).click();
   const maximumOutput = page.getByLabel("Maximum output tokens");
   await expect(maximumOutput).toHaveValue("32000");
   await expect(maximumOutput).toHaveAttribute("max", "32768");
   await page.getByLabel("System prompt").fill("Use concise language and cite sources.");
   await page.getByRole("button", { name: "Apply settings" }).click();
   const tools = page.getByRole("switch", { name: "Research tools" });
-  await expect(tools).not.toBeChecked();
-  await expect(page.getByText("Sends queries and requested public pages to the internet · no writes", { exact: true })).toBeVisible();
-  await page.locator("label.tool-toggle").click();
   await expect(tools).toBeChecked();
+  await expect(page.getByText("Web research plus the permissions selected in settings", { exact: true })).toBeVisible();
 
   const agentRequest = page.waitForRequest((request) =>
     request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/agent/turns",
@@ -26,7 +24,8 @@ test("executes a read-only web search and renders its cited final answer", async
   const request = (await agentRequest).postDataJSON();
   expect(request).toMatchObject({
     instructions: "Use concise language and cite sources.",
-    toolset: "standard-readonly",
+    toolset: "assistant-tools",
+    enabled_tools: ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write_proposal", "python_sandbox", "openrouter_delegate"],
     temperature: 0,
     max_tokens: 32_000,
     stream: true,

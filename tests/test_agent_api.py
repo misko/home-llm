@@ -143,6 +143,21 @@ def test_agent_max_tokens_defaults_to_32000_with_bounded_override() -> None:
         AgentTurnRequest.model_validate({**payload, "max_tokens": 32_769})
 
 
+def test_agent_enabled_tools_are_bounded_and_unique() -> None:
+    payload = {
+        "messages": [{"role": "user", "content": "hello"}],
+        "enabled_tools": ["web_search", "python_sandbox"],
+    }
+    assert AgentTurnRequest.model_validate(payload).enabled_tools == (
+        "web_search",
+        "python_sandbox",
+    )
+    with pytest.raises(ValueError, match="duplicates"):
+        AgentTurnRequest.model_validate({**payload, "enabled_tools": ["web_search", "web_search"]})
+    with pytest.raises(ValueError, match="invalid tool name"):
+        AgentTurnRequest.model_validate({**payload, "enabled_tools": ["not a tool"]})
+
+
 @pytest.mark.asyncio
 async def test_agent_endpoint_executes_tool_and_returns_typed_sse(tmp_path: Path) -> None:
     paths = _paths(tmp_path)

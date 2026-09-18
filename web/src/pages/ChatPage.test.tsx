@@ -101,10 +101,8 @@ describe("ChatPage research tools", () => {
     fireEvent.change(instructions, { target: { value: "x".repeat(17_000) } });
     expect(instructions).toHaveValue("x".repeat(16_384));
     await userEvent.click(screen.getByRole("button", { name: "Apply settings" }));
-    expect(toolSwitch).not.toBeChecked();
-    expect(screen.getByText("Sends queries and requested public pages to the internet · no writes")).toBeVisible();
-    await userEvent.click(toolSwitch);
     expect(toolSwitch).toBeChecked();
+    expect(screen.getByText("Web research plus the permissions selected in settings")).toBeVisible();
     await userEvent.type(screen.getByLabelText("Message the active model"), "Find a current source");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -121,7 +119,8 @@ describe("ChatPage research tools", () => {
     expect(source).toHaveAttribute("target", "_blank");
     expect(screen.getByText("A deterministic research result.")).toBeInTheDocument();
     await waitFor(() => expect(agentRequest).toMatchObject({
-      toolset: "standard-readonly",
+      toolset: "assistant-tools",
+      enabled_tools: ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write_proposal", "python_sandbox", "openrouter_delegate"],
       temperature: 0,
       max_tokens: 32_000,
       instructions: "x".repeat(16_384),
@@ -156,6 +155,8 @@ describe("ChatPage research tools", () => {
 
     const toolSwitch = await screen.findByRole("switch", { name: "Research tools" });
     await waitFor(() => expect(toolSwitch).toBeEnabled());
+    expect(toolSwitch).toBeChecked();
+    await userEvent.click(toolSwitch);
     expect(toolSwitch).not.toBeChecked();
     await userEvent.type(screen.getByLabelText("Message the active model"), "Answer without internet");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -238,7 +239,6 @@ describe("ChatPage research tools", () => {
     expect(screen.queryByText("image-5.png")).not.toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("at most four images");
 
-    await userEvent.click(screen.getByRole("switch", { name: "Research tools" }));
     await userEvent.type(screen.getByLabelText("Message the active model"), "Inspect these images");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText("A cited answer.");
@@ -289,7 +289,6 @@ describe("ChatPage research tools", () => {
     );
     fireEvent.change(imageInput, { target: { files: [image] } });
     await screen.findByText("retry.png");
-    await userEvent.click(screen.getByRole("switch", { name: "Research tools" }));
     const composer = screen.getByLabelText("Message the active model");
     await userEvent.type(composer, "Retry this exact request");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -331,6 +330,7 @@ describe("ChatPage research tools", () => {
     const view = render(<QueryClientProvider client={client}><ChatPage /></QueryClientProvider>);
 
     const composer = await screen.findByLabelText("Message the active model");
+    await userEvent.click(await screen.findByRole("switch", { name: "Research tools" }));
     await userEvent.type(composer, "First saved conversation");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("Raw answer.")).toBeInTheDocument();
@@ -338,6 +338,7 @@ describe("ChatPage research tools", () => {
     const history = screen.getByRole("complementary", { name: "Chat history" });
     await userEvent.click(within(history).getByRole("button", { name: "New chat" }));
     expect(screen.queryByText("First saved conversation", { selector: ".message-content" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("switch", { name: "Research tools" }));
     await userEvent.type(composer, "Second saved conversation");
     await userEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(rawRequests).toHaveLength(2));
@@ -386,6 +387,7 @@ describe("ChatPage research tools", () => {
     render(<QueryClientProvider client={client}><ChatPage /></QueryClientProvider>);
 
     const composer = await screen.findByLabelText("Message the active model");
+    await userEvent.click(await screen.findByRole("switch", { name: "Research tools" }));
     const form = composer.closest("form");
     expect(form).not.toBeNull();
     for (let turn = 1; turn <= 32; turn += 1) {

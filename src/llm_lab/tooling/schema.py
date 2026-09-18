@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -97,10 +98,19 @@ class AgentTurnRequest(AgentDTO):
     temperature: float = Field(default=0.0, ge=0, le=2)
     max_tokens: int = Field(default=32_000, ge=1, le=32_768)
     max_rounds: int | None = Field(default=None, ge=1, le=128)
+    enabled_tools: tuple[str, ...] | None = Field(default=None, max_length=16)
     stream: Literal[True] = True
 
     @model_validator(mode="after")
     def request_is_bounded(self) -> "AgentTurnRequest":
+        if self.enabled_tools is not None:
+            if len(set(self.enabled_tools)) != len(self.enabled_tools):
+                raise ValueError("enabled_tools must not contain duplicates")
+            if any(
+                re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", name) is None
+                for name in self.enabled_tools
+            ):
+                raise ValueError("enabled_tools contains an invalid tool name")
         for index, message in enumerate(self.messages):
             expected = "user" if index % 2 == 0 else "assistant"
             if message.role != expected:

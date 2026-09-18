@@ -541,6 +541,15 @@ class AgentRunner:
         context_size: int | None,
     ) -> AsyncIterator[AgentEvent]:
         definitions = self.registry.resolve(request.toolset)
+        if request.enabled_tools is not None:
+            requested = set(request.enabled_tools)
+            unavailable = requested.difference(definition.name for definition in definitions)
+            if unavailable:
+                raise ToolPolicyError(
+                    "tool_not_permitted",
+                    "One or more requested tools are not available in the selected toolset.",
+                )
+            definitions = tuple(definition for definition in definitions if definition.name in requested)
         permitted = tuple(definition.name for definition in definitions)
         system_prompt = _TOOL_SYSTEM_PROMPT
         if request.instructions:

@@ -1061,6 +1061,18 @@ def create_builtin_registry(
                 tools=("openrouter_delegate",),
             )
         )
+    combined_tools = ["web_search", "web_fetch", "calculator", "current_time"]
+    if workspace.enabled:
+        combined_tools.extend(("workspace_list", "workspace_read", "workspace_write_proposal"))
+    if sandbox.enabled:
+        combined_tools.append("python_sandbox")
+    if openrouter.enabled:
+        combined_tools.append("openrouter_delegate")
+    registry.register_toolset(ToolsetDefinition(
+        id="assistant-tools", name="Assistant tools",
+        description="Operator-configured tools; each client request may enable only a reviewed subset.",
+        tools=tuple(combined_tools),
+    ))
     return registry
 
 

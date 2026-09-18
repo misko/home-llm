@@ -36,12 +36,19 @@ describe("streamAgentTurn", () => {
       [{ id: "m1", role: "user", content: "Research this", created_at: "now" }],
       new AbortController().signal,
       (update) => updates.push(update.content),
-      { temperature: 0.2, maxTokens: 256, systemPrompt: "Cite sources." },
+      {
+        temperature: 0.2,
+        maxTokens: 256,
+        systemPrompt: "Cite sources.",
+        toolset: "assistant-tools",
+        enabledTools: ["web_search", "python_sandbox"],
+      },
     );
 
     expect(requestBody).toMatchObject({
       instructions: "Cite sources.",
-      toolset: "standard-readonly",
+      toolset: "assistant-tools",
+      enabled_tools: ["web_search", "python_sandbox"],
       temperature: 0.2,
       max_tokens: 256,
       stream: true,
