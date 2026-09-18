@@ -158,6 +158,14 @@ class OpenAIChatBackend:
             ) from exc
         try:
             if response.status_code >= 400:
+                if response.status_code == 500:
+                    body = (await response.aread())[:8192].decode("utf-8", "replace")
+                    if "Failed to parse tool call arguments as JSON" in body:
+                        raise AgentUpstreamError(
+                            "model_tool_arguments_parse_error",
+                            "The active model backend could not parse generated tool arguments",
+                            retryable=True,
+                        )
                 raise AgentUpstreamError(
                     "model_error",
                     f"The active model backend returned HTTP {response.status_code}",
@@ -397,7 +405,7 @@ def _compact_tool_content(content: str, maximum_characters: int) -> str:
 
 
 def _final_synthesis_retry_messages(
-    request: AgentTurnRequest, messages: Sequence[Mapping[str, Any]]
+    request: AgentTurnRequest, messages: Sequence[Mapping[str, Any]], *, backend_error: Mapping[str, str] | None = None
 ) -> list[dict[str, Any]]:
     """Retry final synthesis without the model's prior tool-call transcript."""
     latest = request.messages[-1].content
@@ -413,6 +421,9 @@ def _final_synthesis_retry_messages(
             continue
         name = message.get("name") if isinstance(message.get("name"), str) else "tool"
         evidence.append(f"{name}: {_compact_tool_content(message['content'], 4096)}")
+    recovery = ""
+    if backend_error:
+        recovery = "\n\nBackend recovery information:\n" + json.dumps(dict(backend_error), separators=(",", ":"))
     return [
         {
             "role": "system",
@@ -426,7 +437,8 @@ def _final_synthesis_retry_messages(
             "content": "Original user request:\n"
             + user_request
             + "\n\nCollected tool evidence:\n"
-            + "\n\n".join(evidence),
+            + "\n\n".join(evidence)
+            + recovery,
         },
     ]
 
@@ -617,6 +629,8 @@ class AgentRunner:
         turn_policy = TurnToolPolicy(request)
         generation_tokens_remaining = self.limits.max_cumulative_generation_tokens
         textual_tool_call_retry_used = False
+        backend_tool_parse_retry_used = False
+        final_synthesis_mode = False
 
         max_rounds = request.max_rounds or self.limits.max_rounds
         for round_number in range(1, max_rounds + 1):
@@ -639,7 +653,7 @@ class AgentRunner:
                 context_reply_tokens,
             )
             generation_tokens_remaining -= round_max_tokens
-            available_definitions = tuple(
+            available_definitions = () if final_synthesis_mode else tuple(
                 definition
                 for definition in definitions
                 if turn_policy.available_to_model(definition)
@@ -670,6 +684,27 @@ class AgentRunner:
                     "The active model exceeded its response deadline",
                     retryable=True,
                 ) from exc
+            except AgentUpstreamError as exc:
+                if exc.code != "model_tool_arguments_parse_error" or backend_tool_parse_retry_used:
+                    raise
+                backend_tool_parse_retry_used = True
+                final_synthesis_mode = True
+                LOGGER.warning(
+                    "agent_backend_tool_parse_retry model=%s deployment=%s round=%d",
+                    model, deployment, round_number,
+                )
+                messages = _final_synthesis_retry_messages(
+                    request,
+                    messages,
+                    backend_error={
+                        "source": "local_backend",
+                        "code": "tool_arguments_json_parse_error",
+                        "stage": "native_tool_call_parsing",
+                        "detail": "The backend rejected generated tool-call arguments because they were not valid complete JSON.",
+                        "retry_instruction": "Do not call tools. Return a plain final answer.",
+                    },
+                )
+                continue
             _merge_usage(cumulative_usage, _usage(document))
             message, finish_reason = _choice(document)
             calls = _tool_calls(message)

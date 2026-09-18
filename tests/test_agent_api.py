@@ -21,7 +21,7 @@ from llm_lab.runtime import (
 )
 from llm_lab.schema import BackendKind, DeploymentSpec
 from llm_lab.tooling.builtins import create_builtin_registry
-from llm_lab.tooling.errors import ToolExecutionError, ToolPolicyError
+from llm_lab.tooling.errors import AgentUpstreamError, ToolExecutionError, ToolPolicyError
 from llm_lab.tooling.openrouter import OpenRouterProvider, OpenRouterSettings
 from llm_lab.tooling.orchestrator import AgentLimits, AgentRunner
 from llm_lab.tooling.registry import ToolDefinition, ToolRegistry, ToolsetDefinition
@@ -418,7 +418,7 @@ async def test_agent_rejects_remote_file_and_unreviewed_image_parts(
 
 
 class _ScriptedBackend:
-    def __init__(self, responses: list[Mapping[str, Any]]) -> None:
+    def __init__(self, responses: list[Any]) -> None:
         self.responses = responses
         self.calls = 0
         self.requests: list[dict[str, Any]] = []
@@ -427,6 +427,8 @@ class _ScriptedBackend:
         self.requests.append(dict(kwargs))
         response = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
+        if isinstance(response, Exception):
+            raise response
         return response
 
 
@@ -873,6 +875,26 @@ async def test_textual_tool_call_after_fetch_is_retried_as_synthesis(caplog: pyt
     assert "web_fetch" in backend.requests[-1]["payload"]["messages"][-1]["content"]
     assert "agent_final_synthesis_retry model=local-test deployment=test-active round=3" in caplog.messages
     assert "agent_final_synthesis_repaired model=local-test deployment=test-active round=4" in caplog.messages
+
+
+@pytest.mark.asyncio
+async def test_backend_tool_parse_error_retries_with_sanitized_error_context() -> None:
+    backend = _ScriptedBackend([
+        AgentUpstreamError("model_tool_arguments_parse_error", "raw backend detail", retryable=True),
+        _final_response("Recovered final answer."),
+    ])
+    runner = AgentRunner(create_builtin_registry(), backend)
+    request = AgentTurnRequest(messages=({"role": "user", "content": "Explain this."},))
+
+    events = [event async for event in runner.run(request, model="local-test", deployment="test-active", base_url="http://backend.invalid/v1")]
+
+    assert events[-1].type == "turn.completed"
+    retry = backend.requests[1]["payload"]
+    assert "tools" not in retry and "tool_choice" not in retry
+    assert [message["role"] for message in retry["messages"]] == ["system", "user"]
+    context = retry["messages"][1]["content"]
+    assert '"code":"tool_arguments_json_parse_error"' in context
+    assert "raw backend detail" not in context
 
 
 @pytest.mark.asyncio
