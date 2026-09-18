@@ -33,7 +33,7 @@ policy:
     - read_only
   maximum_calls_per_round: 4
   tool_calls_execute_serially: true
-  maximum_rounds: 6
+  maximum_rounds: 128
   maximum_concurrent_turns: 1
   maximum_queued_turns: 1
   tool_call_deadline_seconds: 20

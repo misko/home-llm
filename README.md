@@ -195,7 +195,7 @@ For a trusted LAN without TLS, use a literal RFC 1918 address and explicitly set
 `LLM_LAB_ALLOW_INSECURE_LAN=1`. Hostnames and public IP addresses remain blocked
 for plaintext HTTP. This opt-in sends prompts and supplied source context across
 the LAN without encryption; prefer HTTPS or an SSH tunnel when available.
-The shipped limits allow one running and one queued agent turn, six model
+The shipped limits allow one running and one queued agent turn, up to 128 model
 rounds, and four serial tool calls per round. `max_tokens` defaults to 32,000
 when omitted and accepts values from 1 through 32,768. This value is a per-round
 upper bound, not a promised response length: prompt, conversation, and tool

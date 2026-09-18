@@ -64,6 +64,7 @@ function newChat(): SavedChat {
     settings: {
       temperature: 0,
       maxTokens: defaultMaximumOutputTokens,
+      maxToolRounds: 128,
       systemPrompt: "",
       toolsEnabled: false,
     },
@@ -247,6 +248,7 @@ export function ChatPage() {
   const messages = activeChat?.messages ?? [];
   const temperature = activeChat?.settings.temperature ?? 0;
   const maxTokens = activeChat?.settings.maxTokens ?? defaultMaximumOutputTokens;
+  const maxToolRounds = activeChat?.settings.maxToolRounds ?? 128;
   const systemPrompt = activeChat?.settings.systemPrompt ?? "";
   const toolsEnabled = activeChat?.settings.toolsEnabled ?? false;
   const toolset = activeChat?.settings.toolset ?? RESEARCH_TOOLSET;
@@ -476,7 +478,7 @@ export function ChatPage() {
           setMessages((current) => current.map((message) => message.id === assistantId
             ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources }
             : message));
-        }, { temperature, maxTokens, systemPrompt, toolset });
+        }, { temperature, maxTokens, maxToolRounds, systemPrompt, toolset });
       } else {
         await streamChat(activeAlias, requestMessages, controller.signal, (update) => {
           assistantHasEvidence ||= Boolean(update.content || update.reasoning || update.toolCalls.length);
@@ -696,6 +698,7 @@ export function ChatPage() {
         <div className="form-stack">
           <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => updateSettings({ temperature: Number(event.target.value) })} /></label>
           <label>Maximum output tokens<input type="number" min="1" max={maximumOutputTokens} value={maxTokens} onChange={(event) => updateSettings({ maxTokens: Math.min(maximumOutputTokens, Math.max(1, Math.trunc(Number(event.target.value) || 1))) })} /></label>
+          <label>Maximum tool rounds <output>{maxToolRounds === 128 ? "Unlimited (128)" : maxToolRounds}</output><input type="range" min="1" max="128" step="1" value={maxToolRounds} onChange={(event) => updateSettings({ maxToolRounds: Number(event.target.value) })} /></label>
           <label>Tool access<select value={toolset} onChange={(event) => updateSettings({ toolset: event.target.value === WORKSPACE_TOOLSET ? WORKSPACE_TOOLSET : event.target.value === PYTHON_SANDBOX_TOOLSET ? PYTHON_SANDBOX_TOOLSET : event.target.value === OPENROUTER_TOOLSET ? OPENROUTER_TOOLSET : RESEARCH_TOOLSET })}>
             <option value={RESEARCH_TOOLSET}>Public research · read-only</option>
             <option value={WORKSPACE_TOOLSET}>Approved workspace · writes need approval</option>
@@ -703,7 +706,7 @@ export function ChatPage() {
             <option value={OPENROUTER_TOOLSET}>OpenRouter delegation · sends prompt to a remote model</option>
           </select></label>
           <p className="modal-note">
-            {defaultMaximumOutputTokens.toLocaleString()} is a ceiling, not a target. Prompt, history, reasoning, and reply share the active {runtime.data?.context_size?.toLocaleString() ?? "model"}-token context; tool-enabled turns also have safety deadlines.
+            {defaultMaximumOutputTokens.toLocaleString()} is a ceiling, not a target. Prompt, history, reasoning, and reply share the active {runtime.data?.context_size?.toLocaleString() ?? "model"}-token context; tool-enabled turns also stop at the configured round cap or total deadline.
           </p>
           <label>System prompt<textarea rows={5} maxLength={maximumInstructionsLength} value={systemPrompt} onChange={(event) => updateSettings({ systemPrompt: event.target.value.slice(0, maximumInstructionsLength) })} placeholder="Optional instructions for this chat" /></label>
           <button className="primary-button" onClick={() => setSettingsOpen(false)}>Apply settings</button>

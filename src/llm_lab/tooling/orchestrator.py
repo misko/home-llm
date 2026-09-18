@@ -69,7 +69,7 @@ _MAXIMUM_REPLY_CONTEXT_FRACTION = 4
 
 @dataclass(frozen=True)
 class AgentLimits:
-    max_rounds: int = 6
+    max_rounds: int = 128
     max_tool_calls_per_round: int = 4
     model_timeout_seconds: float = 120.0
     total_timeout_seconds: float = 1_800.0
@@ -82,8 +82,8 @@ class AgentLimits:
     max_cumulative_generation_tokens: int = 196_608
 
     def __post_init__(self) -> None:
-        if not 1 <= self.max_rounds <= 16:
-            raise ValueError("max_rounds must be between 1 and 16")
+        if not 1 <= self.max_rounds <= 128:
+            raise ValueError("max_rounds must be between 1 and 128")
         if not 1 <= self.max_tool_calls_per_round <= 16:
             raise ValueError("max_tool_calls_per_round must be between 1 and 16")
         if not 1 <= self.max_concurrent_turns <= 8:
@@ -572,7 +572,8 @@ class AgentRunner:
         generation_tokens_remaining = self.limits.max_cumulative_generation_tokens
         textual_tool_call_retry_used = False
 
-        for round_number in range(1, self.limits.max_rounds + 1):
+        max_rounds = request.max_rounds or self.limits.max_rounds
+        for round_number in range(1, max_rounds + 1):
             if generation_tokens_remaining <= 0:
                 raise ToolPolicyError(
                     "generation_budget_exhausted",
@@ -632,7 +633,7 @@ class AgentRunner:
                     not available_definitions
                     and _TEXTUAL_TOOL_CALL_PATTERN.search(content)
                 ):
-                    if textual_tool_call_retry_used or round_number == self.limits.max_rounds:
+                    if textual_tool_call_retry_used or round_number == max_rounds:
                         raise AgentUpstreamError(
                             "invalid_model_response",
                             "The active model returned tool-call markup instead of an answer",
@@ -695,7 +696,7 @@ class AgentRunner:
                     "tool_call_limit",
                     "The active model requested too many tools in one round",
                 )
-            if round_number == self.limits.max_rounds:
+            if round_number == max_rounds:
                 raise ToolPolicyError(
                     "agent_round_limit",
                     "The agent reached its maximum number of model/tool rounds",

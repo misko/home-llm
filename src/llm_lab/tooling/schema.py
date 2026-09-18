@@ -96,6 +96,7 @@ class AgentTurnRequest(AgentDTO):
     instructions: str | None = Field(default=None, max_length=16_384)
     temperature: float = Field(default=0.0, ge=0, le=2)
     max_tokens: int = Field(default=32_000, ge=1, le=32_768)
+    max_rounds: int | None = Field(default=None, ge=1, le=128)
     stream: Literal[True] = True
 
     @model_validator(mode="after")

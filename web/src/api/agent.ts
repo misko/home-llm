@@ -43,6 +43,7 @@ interface AgentEvent extends Record<string, unknown> {
 interface AgentOptions {
   temperature: number;
   maxTokens: number;
+  maxToolRounds?: number;
   systemPrompt?: string;
   toolset?: string;
 }
@@ -213,6 +214,7 @@ export async function streamAgentTurn(
       toolset: options.toolset ?? RESEARCH_TOOLSET,
       temperature: options.temperature,
       max_tokens: options.maxTokens,
+      max_rounds: options.maxToolRounds ?? 128,
       stream: true,
     }),
     signal,
