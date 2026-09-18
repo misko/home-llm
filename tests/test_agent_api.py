@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -818,16 +819,14 @@ async def test_fetched_prompt_injection_cannot_chain_open_world_calls(
         "open_world_chain_blocked",
         "open_world_chain_blocked",
     ]
-    final_tools = {
-        item["function"]["name"]
-        for item in backend.requests[-1]["payload"]["tools"]
-    }
-    assert final_tools == set()
+    assert "tools" not in backend.requests[-1]["payload"]
+    assert "tool_choice" not in backend.requests[-1]["payload"]
     assert events[-1]["type"] == "turn.completed"
 
 
 @pytest.mark.asyncio
-async def test_textual_tool_call_after_fetch_is_retried_as_synthesis() -> None:
+async def test_textual_tool_call_after_fetch_is_retried_as_synthesis(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="llm_lab.tooling.orchestrator")
     handler_calls: list[tuple[str, str]] = []
     registry = _open_world_registry(handler_calls, fetched_text="Useful evidence.")
     textual_call = (
@@ -866,8 +865,8 @@ async def test_textual_tool_call_after_fetch_is_retried_as_synthesis() -> None:
     assert events[-1].type == "turn.completed"
     assert events[-1].rounds == 4
     assert backend.calls == 4
-    assert backend.requests[-1]["payload"]["tools"] == []
-    assert backend.requests[-1]["payload"]["tool_choice"] == "none"
+    assert "tools" not in backend.requests[-1]["payload"]
+    assert "tool_choice" not in backend.requests[-1]["payload"]
     assert (
         "Tool execution is complete"
         in backend.requests[-1]["payload"]["messages"][-1]["content"]
@@ -880,10 +879,12 @@ async def test_textual_tool_call_after_fetch_is_retried_as_synthesis() -> None:
         )
         if message["role"] == "system"
     ] == [0]
+    assert "agent_final_synthesis_retry model=local-test deployment=test-active round=3" in caplog.messages
+    assert "agent_final_synthesis_repaired model=local-test deployment=test-active round=4" in caplog.messages
 
 
 @pytest.mark.asyncio
-async def test_repeated_textual_tool_call_becomes_sanitized_error(tmp_path: Path) -> None:
+async def test_repeated_textual_tool_call_becomes_sanitized_error(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     paths = _paths(tmp_path)
     _publish_state(paths)
     handler_calls: list[tuple[str, str]] = []
@@ -923,6 +924,8 @@ async def test_repeated_textual_tool_call_becomes_sanitized_error(tmp_path: Path
         "message": "The active model returned tool-call markup instead of an answer",
         "retryable": True,
     }
+    assert "agent_final_synthesis_failed model=local-test deployment=test-active round=4" in caplog.messages
+    assert all(call == ("web_search", "image models") or call == ("web_fetch", "https://approved.example/article") for call in handler_calls)
 
 
 @pytest.mark.asyncio

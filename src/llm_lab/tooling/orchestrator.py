@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 import threading
@@ -65,6 +66,7 @@ _MODEL_CONTEXT_CHARACTERS_PER_TOKEN = 2
 _MINIMUM_REPLY_TOKENS = 512
 _MAXIMUM_REPLY_TOKENS = 8192
 _MAXIMUM_REPLY_CONTEXT_FRACTION = 4
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -607,16 +609,17 @@ class AgentRunner:
                 for definition in definitions
                 if turn_policy.available_to_model(definition)
             )
-            payload = {
+            payload: dict[str, Any] = {
                 "messages": model_messages,
                 "temperature": request.temperature,
                 "max_tokens": round_max_tokens,
-                "tools": [
+            }
+            if available_definitions:
+                payload["tools"] = [
                     definition.openai_schema()
                     for definition in available_definitions
-                ],
-                "tool_choice": "auto" if available_definitions else "none",
-            }
+                ]
+                payload["tool_choice"] = "auto"
             try:
                 async with asyncio.timeout(self.limits.model_timeout_seconds):
                     document = await self.backend.complete(
@@ -643,16 +646,35 @@ class AgentRunner:
                     and _TEXTUAL_TOOL_CALL_PATTERN.search(content)
                 ):
                     if textual_tool_call_retry_used or round_number == max_rounds:
+                        LOGGER.warning(
+                            "agent_final_synthesis_failed model=%s deployment=%s round=%d",
+                            model,
+                            deployment,
+                            round_number,
+                        )
                         raise AgentUpstreamError(
                             "invalid_model_response",
                             "The active model returned tool-call markup instead of an answer",
                             retryable=True,
                         )
                     textual_tool_call_retry_used = True
+                    LOGGER.info(
+                        "agent_final_synthesis_retry model=%s deployment=%s round=%d",
+                        model,
+                        deployment,
+                        round_number,
+                    )
                     messages.append(
                         {"role": "user", "content": _FINAL_SYNTHESIS_PROMPT}
                     )
                     continue
+                if textual_tool_call_retry_used:
+                    LOGGER.info(
+                        "agent_final_synthesis_repaired model=%s deployment=%s round=%d",
+                        model,
+                        deployment,
+                        round_number,
+                    )
                 if len(content) > self.limits.max_assistant_characters:
                     raise AgentUpstreamError(
                         "assistant_output_too_large",
