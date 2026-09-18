@@ -167,6 +167,13 @@ function outboundMessages(messages: ChatMessage[]) {
   return outbound;
 }
 
+/** A lazily loaded page can start halfway through a turn. The agent contract
+ * requires a complete user-led sequence, so omit only that orphaned prefix. */
+function boundedConversation(messages: ChatMessage[]) {
+  const firstUser = messages.findIndex((message) => message.role === "user");
+  return firstUser >= 0 ? messages.slice(firstUser) : [];
+}
+
 function eventPayload(raw: unknown, eventName?: string): AgentEvent | null {
   if (!raw || typeof raw !== "object") return null;
   const event = raw as AgentEvent;
@@ -190,7 +197,7 @@ export async function streamAgentTurn(
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({
-      messages: outboundMessages(messages),
+      messages: outboundMessages(boundedConversation(messages)),
       instructions: options.systemPrompt?.trim().slice(0, MAX_INSTRUCTIONS_LENGTH) || undefined,
       toolset: options.toolset ?? RESEARCH_TOOLSET,
       temperature: options.temperature,

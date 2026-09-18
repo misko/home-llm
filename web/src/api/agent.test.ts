@@ -100,6 +100,19 @@ describe("streamAgentTurn", () => {
     });
   });
 
+  it("omits an orphaned assistant message from a lazily loaded page", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(eventStream(["data: {\"type\":\"assistant.delta\",\"content\":\"Done\"}\n\ndata: {\"type\":\"turn.completed\"}\n\n"]));
+    }));
+    await streamAgentTurn([
+      { id: "old", role: "assistant", content: "Orphaned", created_at: "now" },
+      { id: "user", role: "user", content: "Continue", created_at: "now" },
+    ], new AbortController().signal, () => undefined, { temperature: 0, maxTokens: 64 });
+    expect(requestBody?.messages).toEqual([{ role: "user", content: "Continue" }]);
+  });
+
   it("rejects structured server failures and incomplete streams", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
