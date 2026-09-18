@@ -69,9 +69,9 @@ class ToolDefinition:
             raise ValueError("tool effect is unsupported")
         if self.execution_deadline_seconds is not None and (
             type(self.execution_deadline_seconds) not in (int, float)
-            or not 0 < self.execution_deadline_seconds <= 600
+            or not 0 < self.execution_deadline_seconds <= 7200
         ):
-            raise ValueError("tool execution deadline must be between 0 and 600 seconds")
+            raise ValueError("tool execution deadline must be between 0 and 7200 seconds")
         canonical, validator = _compile_schema(
             self.parameters, name=self.name, purpose="input"
         )

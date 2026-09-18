@@ -45,7 +45,7 @@ class OpenRouterSettings:
             execution_deadline_seconds=float(os.environ.get("LLM_LAB_OPENROUTER_EXECUTION_TIMEOUT_SECONDS", "120")),
             max_output_tokens=int(os.environ.get("LLM_LAB_OPENROUTER_MAX_OUTPUT_TOKENS", "4096")),
         )
-        if not 1 <= value.timeout_seconds <= 600 or not 1 <= value.execution_deadline_seconds <= 600 or not 1 <= value.max_output_tokens <= 16_384:
+        if not 1 <= value.timeout_seconds <= 7200 or not 1 <= value.execution_deadline_seconds <= 7200 or not 1 <= value.max_output_tokens <= 16_384:
             raise ValueError("OpenRouter limits are outside reviewed bounds")
         if value.execution_deadline_seconds < value.timeout_seconds:
             raise ValueError("OpenRouter execution deadline must cover its HTTP timeout")

@@ -37,18 +37,24 @@ ClientGetter = Callable[[], httpx.AsyncClient]
 
 def configured_agent_limits() -> AgentLimits:
     """Read the operator-selected total deadline while retaining a hard ceiling."""
-    raw = os.environ.get("LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS")
-    if raw is None:
-        return AgentLimits()
-    try:
-        timeout = float(raw)
-    except ValueError as exc:
-        raise ValueError("LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS must be a number") from exc
-    if not 1 <= timeout <= MAX_AGENT_TOTAL_TIMEOUT_SECONDS:
+    values = {
+        "total_timeout_seconds": os.environ.get("LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS"),
+        "model_timeout_seconds": os.environ.get("LLM_LAB_AGENT_MODEL_TIMEOUT_SECONDS"),
+        "tool_timeout_seconds": os.environ.get("LLM_LAB_AGENT_TOOL_TIMEOUT_SECONDS"),
+    }
+    configured: dict[str, float] = {}
+    for field, raw in values.items():
+        if raw is None:
+            continue
+        try:
+            configured[field] = float(raw)
+        except ValueError as exc:
+            raise ValueError(f"LLM_LAB_AGENT_{field.upper()} must be a number") from exc
+    if "total_timeout_seconds" in configured and not 1 <= configured["total_timeout_seconds"] <= MAX_AGENT_TOTAL_TIMEOUT_SECONDS:
         raise ValueError(
             "LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS must be between 1 and 43200"
         )
-    return AgentLimits(total_timeout_seconds=timeout)
+    return AgentLimits(**configured)
 
 
 class _AgentBodyTooLarge(HTTPException):

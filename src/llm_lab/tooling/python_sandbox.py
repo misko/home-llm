@@ -38,6 +38,7 @@ class PythonSandboxSettings:
         return cls(
             enabled=os.environ.get("LLM_LAB_PYTHON_SANDBOX_ENABLED", "").strip() == "1",
             image=os.environ.get("LLM_LAB_PYTHON_SANDBOX_IMAGE", DEFAULT_IMAGE).strip(),
+            timeout_seconds=float(os.environ.get("LLM_LAB_PYTHON_SANDBOX_TIMEOUT_SECONDS", "20")),
         )
 
     def __post_init__(self) -> None:
@@ -45,7 +46,7 @@ class PythonSandboxSettings:
             raise ValueError("Python sandbox requires Docker")
         if not self.image.startswith("python@sha256:") or len(self.image) != len("python@sha256:") + 64:
             raise ValueError("Python sandbox image must use a pinned Python digest")
-        if not 1 <= self.timeout_seconds <= 60 or not 16 <= self.pids_limit <= 256:
+        if not 1 <= self.timeout_seconds <= 600 or not 16 <= self.pids_limit <= 256:
             raise ValueError("Python sandbox limits are invalid")
 
 
@@ -98,6 +99,7 @@ class PythonSandboxProvider(ToolProvider):
             },
             handler=self.run,
             available=self.enabled,
+            execution_deadline_seconds=self.settings.timeout_seconds,
         ),)
 
     async def run(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
