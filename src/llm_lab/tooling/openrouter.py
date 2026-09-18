@@ -17,6 +17,10 @@ from .registry import ToolDefinition, ToolProvider
 _API_URL = "https://openrouter.ai/api/v1/chat/completions"
 _MAX_PROMPT_CHARACTERS = 32_768
 _MAX_OUTPUT_CHARACTERS = 65_536
+_FINAL_ANSWER_RETRY_SUFFIX = (
+    "\n\nReturn a concise final answer now. Do not provide reasoning, tool calls, "
+    "or analysis; put the answer in the response content."
+)
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,18 @@ class OpenRouterProvider(ToolProvider):
         model, prompt = arguments["model"], arguments["prompt"]
         if model not in self.settings.allowed_models:
             raise ToolPolicyError("openrouter_model_denied", "Requested OpenRouter model is not operator-approved")
+        content, usage = await self._request(model, prompt)
+        if not content.strip():
+            content, usage = await self._request(model, prompt + _FINAL_ANSWER_RETRY_SUFFIX)
+        if not content.strip():
+            raise ToolExecutionError(
+                "openrouter_no_final_answer",
+                "OpenRouter returned no final answer after a bounded retry.",
+                retryable=True,
+            )
+        return {"model": model, "content": content[:_MAX_OUTPUT_CHARACTERS], "usage": usage}
+
+    async def _request(self, model: str, prompt: str) -> tuple[str, dict[str, int]]:
         try:
             response = await self._client.post(_API_URL, headers={"Authorization": f"Bearer {self.settings.api_key}", "Content-Type": "application/json"}, json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": self.settings.max_output_tokens, "stream": False})
         except httpx.TimeoutException as exc:
@@ -96,14 +112,18 @@ class OpenRouterProvider(ToolProvider):
         if response.status_code >= 400:
             raise ToolExecutionError("openrouter_rejected", "OpenRouter rejected the delegated request", retryable=response.status_code >= 500)
         try:
-            document = response.json(); choice = document["choices"][0]["message"]; content = choice.get("content", "")
+            document = response.json(); choice = document["choices"][0]["message"]
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise ToolExecutionError("openrouter_invalid_response", "OpenRouter returned an invalid response", retryable=True) from exc
+        refusal = choice.get("refusal")
+        if isinstance(refusal, str) and refusal.strip():
+            raise ToolExecutionError("openrouter_refusal", "The delegated OpenRouter model declined this request.")
+        content = choice.get("content", "")
         if not isinstance(content, str):
-            raise ToolExecutionError("openrouter_invalid_response", "OpenRouter returned invalid assistant content", retryable=True)
+            content = ""
         usage = document.get("usage") if isinstance(document, Mapping) else {}
         normalized_usage = {key: value for key, value in (usage.items() if isinstance(usage, Mapping) else ()) if key in {"prompt_tokens", "completion_tokens", "total_tokens"} and isinstance(value, int) and value >= 0}
-        return {"model": model, "content": content[:_MAX_OUTPUT_CHARACTERS], "usage": normalized_usage}
+        return content, normalized_usage
 
     async def aclose(self) -> None:
         if self._owns_client:

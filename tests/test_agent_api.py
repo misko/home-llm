@@ -20,7 +20,7 @@ from llm_lab.runtime import (
 )
 from llm_lab.schema import BackendKind, DeploymentSpec
 from llm_lab.tooling.builtins import create_builtin_registry
-from llm_lab.tooling.errors import ToolPolicyError
+from llm_lab.tooling.errors import ToolExecutionError, ToolPolicyError
 from llm_lab.tooling.openrouter import OpenRouterProvider, OpenRouterSettings
 from llm_lab.tooling.orchestrator import AgentLimits, AgentRunner
 from llm_lab.tooling.registry import ToolDefinition, ToolRegistry, ToolsetDefinition
@@ -166,6 +166,46 @@ def test_openrouter_tool_schema_lists_only_approved_models() -> None:
     model = provider.tools[0].parameters["properties"]["model"]
     assert model["enum"] == ["z-ai/glm-5.3", "qwen/qwen3.6-27b"]
     assert provider.tools[0].execution_deadline_seconds == 120
+
+
+@pytest.mark.asyncio
+async def test_openrouter_retries_reasoning_only_response_for_final_answer() -> None:
+    requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx.Response(200, json={"choices": [{"message": {"content": None, "reasoning": "private"}}]})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Final answer."}}], "usage": {"total_tokens": 12}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenRouterProvider(OpenRouterSettings(api_key="test-key", allowed_models=("z-ai/glm-5.3",)), client=client)
+    try:
+        result = await provider.delegate({"model": "z-ai/glm-5.3", "prompt": "Answer this."})
+    finally:
+        await client.aclose()
+
+    assert result == {"model": "z-ai/glm-5.3", "content": "Final answer.", "usage": {"total_tokens": 12}}
+    assert len(requests) == 2
+    assert "Return a concise final answer now" in requests[1]["messages"][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_openrouter_refusal_is_non_retryable() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(200, json={"choices": [{"message": {"content": None, "refusal": "I cannot help."}}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenRouterProvider(OpenRouterSettings(api_key="test-key", allowed_models=("z-ai/glm-5.3",)), client=client)
+    try:
+        with pytest.raises(ToolExecutionError, match="declined") as exc_info:
+            await provider.delegate({"model": "z-ai/glm-5.3", "prompt": "Unsafe request."})
+    finally:
+        await client.aclose()
+
+    assert exc_info.value.code == "openrouter_refusal"
+    assert exc_info.value.retryable is False
 
 
 @pytest.mark.asyncio
