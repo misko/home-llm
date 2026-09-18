@@ -12,7 +12,7 @@ Environment=LLM_LAB_ALLOWED_HOSTS=localhost,127.0.0.1,kalman,kalman.local,192.16
 Environment=LLM_LAB_GATEWAY_URL=http://192.168.1.141:14000
 Environment=LLM_LAB_WORKSPACE_ROOT=/srv/llm-lab-workspaces
 Environment=LLM_LAB_PYTHON_SANDBOX_ENABLED=1
-Environment=LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS=1800
+Environment=LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS=18000
 Environment=LLM_LAB_AGENT_MODEL_TIMEOUT_SECONDS=1200
 Environment=LLM_LAB_AGENT_TOOL_TIMEOUT_SECONDS=200
 EnvironmentFile=-/home/mouse9911/gits/llms/.env
