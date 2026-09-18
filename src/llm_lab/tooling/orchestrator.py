@@ -72,7 +72,7 @@ class AgentLimits:
     max_rounds: int = 6
     max_tool_calls_per_round: int = 4
     model_timeout_seconds: float = 120.0
-    total_timeout_seconds: float = 180.0
+    total_timeout_seconds: float = 1_800.0
     tool_timeout_seconds: float = 20.0
     max_tool_result_bytes: int = 64 * 1024
     max_model_response_bytes: int = 2 * 1024 * 1024

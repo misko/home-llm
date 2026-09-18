@@ -202,7 +202,7 @@ upper bound, not a promised response length: prompt, conversation, and tool
 traffic share the active deployment's context window, and the model may stop
 earlier. The agent also reserves generation allowance against a 196,608-token
 cumulative turn budget. Each model round has a 120-second deadline and the
-whole turn has a 180-second deadline; model-round responses are capped at 2 MiB
+whole turn has a 30-minute deadline; model-round responses are capped at 2 MiB
 and caller-visible assistant text at 262,144 characters. Any of those limits,
 or the active context window, can end a response before the requested token
 ceiling. Each tool call has a 20-second deadline. Web requests additionally
