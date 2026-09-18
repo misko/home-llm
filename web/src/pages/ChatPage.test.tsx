@@ -171,6 +171,34 @@ describe("ChatPage research tools", () => {
     client.clear();
   });
 
+  it("keeps previous chats and settings behind compact chat controls", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/v1/models") {
+        return new Response(JSON.stringify(portfolioFixture()), { headers: { "Content-Type": "application/json" } });
+      }
+      if (path === "/api/v1/runtime") {
+        return new Response(JSON.stringify(runtimeFixture()), { headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${path}`);
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    render(<QueryClientProvider client={client}><ChatPage /></QueryClientProvider>);
+
+    const history = await screen.findByRole("complementary", { name: "Chat history" });
+    const previousChats = screen.getByRole("button", { name: "Previous chats" });
+    expect(previousChats).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(previousChats);
+    expect(previousChats).toHaveAttribute("aria-expanded", "true");
+    expect(history).toHaveClass("open");
+    await userEvent.click(screen.getByRole("button", { name: "Close previous chats" }));
+    expect(history).not.toHaveClass("open");
+
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    expect(screen.getByRole("dialog", { name: "Generation settings" })).toBeInTheDocument();
+    client.clear();
+  });
+
   it("accepts only supported images and caps the whole conversation at four", async () => {
     let agentRequest: Record<string, unknown> | undefined;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

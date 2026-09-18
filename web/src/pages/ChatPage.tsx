@@ -186,6 +186,7 @@ export function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const persistedChatsRef = useRef(new Map<string, SavedChat>());
 
@@ -243,8 +244,13 @@ export function ChatPage() {
   }
 
   function selectChat(chatId: string) {
-    if (streaming || chatId === activeChatId) return;
+    if (streaming) return;
+    if (chatId === activeChatId) {
+      setHistoryOpen(false);
+      return;
+    }
     setActiveChatId(chatId);
+    setHistoryOpen(false);
     setDraft("");
     setAttachments([]);
     setError(null);
@@ -259,6 +265,7 @@ export function ChatPage() {
     setDraft("");
     setAttachments([]);
     setError(null);
+    setHistoryOpen(false);
   }
 
   function deleteChat(chatId: string) {
@@ -398,10 +405,14 @@ export function ChatPage() {
 
   return (
     <section className="workspace workspace-wide chat-workspace">
-      <aside className="chat-history" aria-label="Chat history">
+      {historyOpen && <button className="chat-history-backdrop" aria-label="Dismiss chat history" onClick={() => setHistoryOpen(false)} />}
+      <aside className={historyOpen ? "chat-history open" : "chat-history"} aria-label="Chat history">
         <div className="chat-history-head">
           <div><MessagesSquare size={17} /><strong>Chats</strong></div>
-          <button className="icon-button" aria-label="New chat" title="New chat" disabled={streaming} onClick={createNewChat}><MessageSquarePlus size={16} /></button>
+          <div className="chat-history-actions">
+            <button className="icon-button" aria-label="New chat" title="New chat" disabled={streaming} onClick={createNewChat}><MessageSquarePlus size={16} /></button>
+            <button className="icon-button chat-history-close" aria-label="Close previous chats" onClick={() => setHistoryOpen(false)}><X size={16} /></button>
+          </div>
         </div>
         <div className="chat-history-list">
           {sortedChats.map((chat) => (
@@ -427,6 +438,21 @@ export function ChatPage() {
           {messages.length > 0 && <button className="ghost-button" disabled={streaming} onClick={() => setMessages([])}><Trash2 size={15} /> Clear</button>}
           <button className="ghost-button" disabled={streaming} onClick={createNewChat}><MessageSquarePlus size={15} /> New chat</button>
           <button className="ghost-button" onClick={() => setSettingsOpen(true)}><Settings2 size={15} /> Generation settings</button>
+        </div>
+        <div className="mobile-chat-actions" aria-label="Chat controls">
+          <button
+            className="mobile-chat-action"
+            aria-label="Previous chats"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen(true)}
+          >
+            <MessagesSquare size={18} />
+            <span>Chats</span>
+          </button>
+          <button className="mobile-chat-action" aria-label="Open settings" onClick={() => setSettingsOpen(true)}>
+            <Settings2 size={18} />
+            <span>Settings</span>
+          </button>
         </div>
       </div>
 
