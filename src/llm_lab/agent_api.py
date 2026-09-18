@@ -202,6 +202,23 @@ def install_agent_api(
     async def toolsets() -> ToolsetsResponse:
         return selected_registry.describe()
 
+    @router.post("/workspace/proposals/{proposal_id}/approve")
+    async def approve_workspace_proposal(proposal_id: str) -> JSONResponse:
+        """Commit a one-time proposal after an explicit browser action."""
+
+        provider = getattr(selected_registry, "workspace_provider", None)
+        if provider is None or not provider.enabled:
+            return _agent_error(
+                404,
+                "workspace_unavailable",
+                "Workspace tools are not configured",
+            )
+        try:
+            result = await provider.approve(proposal_id)
+        except ToolingError as exc:
+            return _agent_error(409, exc.code, exc.message, retryable=exc.retryable)
+        return JSONResponse(result, status_code=201)
+
     @router.post("/turns", response_model=None)
     async def turns(request: AgentTurnRequest) -> "Response":
         try:

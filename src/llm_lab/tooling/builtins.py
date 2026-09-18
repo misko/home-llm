@@ -22,6 +22,7 @@ import httpx
 
 from .errors import ToolExecutionError, ToolPolicyError
 from .registry import ToolDefinition, ToolProvider, ToolRegistry, ToolsetDefinition
+from .workspace import WorkspaceSettings, WorkspaceToolProvider
 
 
 DEFAULT_SEARXNG_URL = "http://127.0.0.1:18888"
@@ -1018,6 +1019,21 @@ def create_builtin_registry(
             tools=("web_search", "web_fetch", "calculator", "current_time"),
         )
     )
+    workspace = WorkspaceToolProvider(WorkspaceSettings.from_environment())
+    registry.register_provider(workspace)
+    registry.workspace_provider = workspace  # type: ignore[attr-defined]
+    if workspace.enabled:
+        registry.register_toolset(
+            ToolsetDefinition(
+                id="workspace-files",
+                name="Workspace files",
+                description=(
+                    "Bounded access to one operator-approved workspace. "
+                    "Writes are proposals and require explicit approval."
+                ),
+                tools=("workspace_list", "workspace_read", "workspace_write_proposal"),
+            )
+        )
     return registry
 
 

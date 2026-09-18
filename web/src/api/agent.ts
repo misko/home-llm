@@ -7,6 +7,7 @@ import type {
 } from "./types";
 
 export const RESEARCH_TOOLSET = "standard-readonly";
+export const WORKSPACE_TOOLSET = "workspace-files";
 const MAX_SERVER_ERROR_MESSAGE = 512;
 const MAX_INSTRUCTIONS_LENGTH = 16_384;
 const POLICY_BLOCK_CODES = new Set([
@@ -329,4 +330,20 @@ export async function streamAgentTurn(
     );
   }
   return snapshot();
+}
+
+export async function approveWorkspaceWrite(proposalId: string) {
+  const response = await fetch(`/api/v1/agent/workspace/proposals/${encodeURIComponent(proposalId)}/approve`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    let message = `Write approval failed (${response.status})`;
+    try {
+      const payload = await response.json() as { error?: { message?: string } };
+      message = boundedServerMessage(payload.error?.message) ?? message;
+    } catch { /* Keep the HTTP-status detail. */ }
+    throw new ApiError(response.status, "workspace_approval_failed", message, response.status >= 500);
+  }
+  return response.json() as Promise<{ path: string; sha256: string; bytes_written: number }>;
 }

@@ -20,7 +20,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { RESEARCH_TOOLSET, streamAgentTurn } from "../api/agent";
+import { approveWorkspaceWrite, RESEARCH_TOOLSET, streamAgentTurn, WORKSPACE_TOOLSET } from "../api/agent";
 import { streamChat } from "../api/chat";
 import { createClientId } from "../api/id";
 import type { AgentSource, AgentToolExecution, ChatAttachment, ChatMessage, ToolCall } from "../api/types";
@@ -123,7 +123,16 @@ function boundedFetchSummary(tool: AgentToolExecution) {
   return `Bounded public extract · ${characters}`;
 }
 
-function ToolExecutionCard({ tool }: { tool: AgentToolExecution }) {
+function workspaceProposalId(tool: AgentToolExecution) {
+  if (tool.name !== "workspace_write_proposal" || tool.status !== "completed" || !tool.result || typeof tool.result !== "object") return null;
+  const proposalId = (tool.result as Record<string, unknown>).proposal_id;
+  return typeof proposalId === "string" ? proposalId : null;
+}
+
+function ToolExecutionCard({ tool, onApproveWorkspaceWrite }: {
+  tool: AgentToolExecution;
+  onApproveWorkspaceWrite: (tool: AgentToolExecution, proposalId: string) => void;
+}) {
   const boundedFetch = boundedFetchSummary(tool);
   const statusLabel = tool.status === "running" ? "Running" : boundedFetch ? "Bounded extract" : tool.status === "completed" ? "Complete" : tool.status === "blocked" ? "Blocked" : "Failed";
   const disclosure = boundedFetch ?? (tool.name === "calculator" || tool.name === "current_time"
@@ -132,6 +141,7 @@ function ToolExecutionCard({ tool }: { tool: AgentToolExecution }) {
       ? "Sends queries and requested public pages to the internet · no writes"
       : "Read-only tool · no writes");
   const statusClass = boundedFetch ? "bounded" : tool.status;
+  const proposalId = workspaceProposalId(tool);
   return (
     <details className={"tool-execution-card " + tool.status} open={tool.status === "running"} data-testid={"tool-" + tool.id}>
       <summary>
@@ -148,6 +158,7 @@ function ToolExecutionCard({ tool }: { tool: AgentToolExecution }) {
       <div className="tool-execution-detail">
         {tool.arguments !== undefined && <div><span>Arguments</span><pre>{formatValue(tool.arguments)}</pre></div>}
         {tool.status === "completed" && tool.result !== undefined && <div><span>Result</span><pre>{formatValue(tool.result)}</pre></div>}
+        {proposalId && <button className="primary-button compact" onClick={() => onApproveWorkspaceWrite(tool, proposalId)}>Approve write</button>}
         {tool.error && <div className="tool-error"><span>{tool.error.code ?? "Tool error"}</span><p>{tool.error.message}</p></div>}
       </div>
     </details>
@@ -196,6 +207,7 @@ export function ChatPage() {
   const maxTokens = activeChat?.settings.maxTokens ?? defaultMaximumOutputTokens;
   const systemPrompt = activeChat?.settings.systemPrompt ?? "";
   const toolsEnabled = activeChat?.settings.toolsEnabled ?? false;
+  const toolset = activeChat?.settings.toolset ?? RESEARCH_TOOLSET;
 
   useEffect(() => {
     let cancelled = false;
@@ -369,7 +381,7 @@ export function ChatPage() {
           setMessages((current) => current.map((message) => message.id === assistantId
             ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources }
             : message));
-        }, { temperature, maxTokens, systemPrompt, toolset: RESEARCH_TOOLSET });
+        }, { temperature, maxTokens, systemPrompt, toolset });
       } else {
         await streamChat(activeAlias, requestMessages, controller.signal, (update) => {
           assistantHasEvidence ||= Boolean(update.content || update.toolCalls.length);
@@ -396,6 +408,27 @@ export function ChatPage() {
     } finally {
       abortRef.current = null;
       setStreaming(false);
+    }
+  }
+
+  async function approveWrite(tool: AgentToolExecution, proposalId: string) {
+    try {
+      const result = await approveWorkspaceWrite(proposalId);
+      setMessages((current) => current.map((message) => ({
+        ...message,
+        tool_executions: message.tool_executions?.map((entry) => entry.id === tool.id
+          ? {
+              ...entry,
+              result: {
+                ...(entry.result && typeof entry.result === "object" ? entry.result as Record<string, unknown> : {}),
+                approved: true,
+                committed: result,
+              },
+            }
+          : entry),
+      })));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The workspace write could not be approved.");
     }
   }
 
@@ -487,7 +520,7 @@ export function ChatPage() {
                   {message.attachments?.length ? <div className="message-images">{message.attachments.map((item) => <img src={item.data_url} alt={item.name} key={item.id} />)}</div> : null}
                   <div className="message-content">{message.content || (streaming ? <span className="typing">Thinking</span> : "")}</div>
                   {message.tool_calls?.map((tool) => <ToolCallCard key={tool.id} tool={tool} />)}
-                  {message.tool_executions?.map((tool) => <ToolExecutionCard key={tool.id} tool={tool} />)}
+                  {message.tool_executions?.map((tool) => <ToolExecutionCard key={tool.id} tool={tool} onApproveWorkspaceWrite={approveWrite} />)}
                   <SourceList sources={message.sources ?? []} />
                 </div>
               </article>
@@ -543,8 +576,8 @@ export function ChatPage() {
               <span className="toggle-track" aria-hidden="true"><span /></span>
               <ShieldCheck size={15} />
               <span className="tool-toggle-copy">
-                <strong>Research tools</strong>
-                <small>{supportsTools ? "Sends queries and requested public pages to the internet · no writes" : "Unavailable for this deployment"}</small>
+                <strong>{toolset === WORKSPACE_TOOLSET ? "Workspace files" : "Research tools"}</strong>
+                <small>{supportsTools ? toolset === WORKSPACE_TOOLSET ? "Reads one approved workspace; writes need your approval" : "Sends queries and requested public pages to the internet · no writes" : "Unavailable for this deployment"}</small>
               </span>
             </label>
             <span className="composer-meta">Temperature {temperature} · Max {maxTokens}</span>
@@ -559,6 +592,10 @@ export function ChatPage() {
         <div className="form-stack">
           <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => updateSettings({ temperature: Number(event.target.value) })} /></label>
           <label>Maximum output tokens<input type="number" min="1" max={maximumOutputTokens} value={maxTokens} onChange={(event) => updateSettings({ maxTokens: Math.min(maximumOutputTokens, Math.max(1, Math.trunc(Number(event.target.value) || 1))) })} /></label>
+          <label>Tool access<select value={toolset} onChange={(event) => updateSettings({ toolset: event.target.value === WORKSPACE_TOOLSET ? WORKSPACE_TOOLSET : RESEARCH_TOOLSET })}>
+            <option value={RESEARCH_TOOLSET}>Public research · read-only</option>
+            <option value={WORKSPACE_TOOLSET}>Approved workspace · writes need approval</option>
+          </select></label>
           <p className="modal-note">
             {defaultMaximumOutputTokens.toLocaleString()} is a ceiling, not a target. Prompt, history, reasoning, and reply share the active {runtime.data?.context_size?.toLocaleString() ?? "model"}-token context; tool-enabled turns also have safety deadlines.
           </p>

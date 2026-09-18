@@ -5,6 +5,7 @@ export interface ChatSettings {
   maxTokens: number;
   systemPrompt: string;
   toolsEnabled: boolean;
+  toolset?: "standard-readonly" | "workspace-files";
 }
 
 export interface SavedChat {
