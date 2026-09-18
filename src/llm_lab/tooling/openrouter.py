@@ -41,7 +41,7 @@ class OpenRouterSettings:
         )
         if not 1 <= value.timeout_seconds <= 600 or not 1 <= value.max_output_tokens <= 16_384:
             raise ValueError("OpenRouter limits are outside reviewed bounds")
-        if len(value.allowed_models) > 16 or any(len(model) > 128 for model in value.allowed_models):
+        if len(value.allowed_models) > 128 or any(len(model) > 128 for model in value.allowed_models):
             raise ValueError("OpenRouter model allow-list is invalid")
         return value
 
