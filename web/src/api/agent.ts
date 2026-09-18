@@ -167,11 +167,21 @@ function outboundMessages(messages: ChatMessage[]) {
   return outbound;
 }
 
-/** A lazily loaded page can start halfway through a turn. The agent contract
- * requires a complete user-led sequence, so omit only that orphaned prefix. */
+/** A lazily loaded page can start halfway through a turn. Older browser records
+ * may also share a timestamp, so select the newest valid user/assistant suffix
+ * rather than allowing a malformed stored prefix to violate the agent contract. */
 function boundedConversation(messages: ChatMessage[]) {
-  const firstUser = messages.findIndex((message) => message.role === "user");
-  return firstUser >= 0 ? messages.slice(firstUser) : [];
+  const suffix: ChatMessage[] = [];
+  let expected: ChatMessage["role"] = "user";
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== expected) continue;
+    suffix.push(message);
+    expected = expected === "user" ? "assistant" : "user";
+  }
+  suffix.reverse();
+  while (suffix[0]?.role !== "user") suffix.shift();
+  return suffix;
 }
 
 function eventPayload(raw: unknown, eventName?: string): AgentEvent | null {

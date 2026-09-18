@@ -113,6 +113,25 @@ describe("streamAgentTurn", () => {
     expect(requestBody?.messages).toEqual([{ role: "user", content: "Continue" }]);
   });
 
+  it("keeps the newest valid suffix when legacy records do not alternate", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(eventStream(["data: {\"type\":\"assistant.delta\",\"content\":\"Done\"}\n\ndata: {\"type\":\"turn.completed\"}\n\n"]));
+    }));
+    await streamAgentTurn([
+      { id: "old-user", role: "user", content: "Old", created_at: "now" },
+      { id: "duplicate-user", role: "user", content: "Duplicate", created_at: "now" },
+      { id: "old-assistant", role: "assistant", content: "Answer", created_at: "now" },
+      { id: "latest-user", role: "user", content: "Continue", created_at: "now" },
+    ], new AbortController().signal, () => undefined, { temperature: 0, maxTokens: 64 });
+    expect(requestBody?.messages).toEqual([
+      { role: "user", content: "Duplicate" },
+      { role: "assistant", content: "Answer" },
+      { role: "user", content: "Continue" },
+    ]);
+  });
+
   it("rejects structured server failures and incomplete streams", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
