@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -64,6 +65,25 @@ async def test_calculator_and_time_are_deterministic_and_schema_validated() -> N
     assert timed.value["iso8601"] == "2026-09-06T13:30:00-07:00"
     assert extra.error is not None and extra.error.code == "invalid_tool_arguments"
     assert unsafe.error is not None and unsafe.error.code == "invalid_expression"
+
+
+@pytest.mark.asyncio
+async def test_tool_specific_execution_deadline_overrides_default() -> None:
+    async def slow_handler(arguments: Mapping[str, Any]) -> dict[str, bool]:
+        del arguments
+        await asyncio.sleep(0.02)
+        return {"ok": True}
+
+    registry = ToolRegistry()
+    registry.register(ToolDefinition(
+        name="slow_tool", description="A bounded slow tool.",
+        parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        output_schema={"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False},
+        handler=slow_handler, execution_deadline_seconds=0.1,
+    ))
+    registry.register_toolset(ToolsetDefinition(id="test", name="Test", description="Test tools.", tools=("slow_tool",)))
+    result = await ToolExecutor(registry, timeout_seconds=0.01).execute("slow_tool", {}, permitted=("slow_tool",))
+    assert result.ok and result.value == {"ok": True}
 
 
 def test_builtin_settings_restrict_search_to_explicit_loopback_service() -> None:

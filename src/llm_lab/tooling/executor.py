@@ -44,7 +44,9 @@ class ToolExecutor:
         try:
             definition = self.authorize(name, arguments, permitted=permitted)
             try:
-                async with asyncio.timeout(self.timeout_seconds):
+                async with asyncio.timeout(
+                    definition.execution_deadline_seconds or self.timeout_seconds
+                ):
                     value = await definition.handler(arguments)
             except TimeoutError as exc:
                 raise ToolExecutionError(

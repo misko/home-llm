@@ -35,6 +35,7 @@ class ToolDefinition:
     effect: Literal[
         "local", "open_world_search", "open_world_fetch", "open_world"
     ] = "local"
+    execution_deadline_seconds: float | None = None
     available: bool = True
     validator: jsonschema.Draft202012Validator = field(
         init=False, repr=False, compare=False
@@ -66,6 +67,11 @@ class ToolDefinition:
             raise ValueError("tool risk must be low, medium, or high")
         if type(self.effect) is not str or self.effect not in TOOL_EFFECTS:
             raise ValueError("tool effect is unsupported")
+        if self.execution_deadline_seconds is not None and (
+            type(self.execution_deadline_seconds) not in (int, float)
+            or not 0 < self.execution_deadline_seconds <= 600
+        ):
+            raise ValueError("tool execution deadline must be between 0 and 600 seconds")
         canonical, validator = _compile_schema(
             self.parameters, name=self.name, purpose="input"
         )

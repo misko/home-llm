@@ -165,6 +165,7 @@ def test_openrouter_tool_schema_lists_only_approved_models() -> None:
     )
     model = provider.tools[0].parameters["properties"]["model"]
     assert model["enum"] == ["z-ai/glm-5.3", "qwen/qwen3.6-27b"]
+    assert provider.tools[0].execution_deadline_seconds == 120
 
 
 @pytest.mark.asyncio

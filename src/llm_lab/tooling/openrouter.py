@@ -24,6 +24,7 @@ class OpenRouterSettings:
     api_key: str = ""
     allowed_models: tuple[str, ...] = ()
     timeout_seconds: float = 90.0
+    execution_deadline_seconds: float = 120.0
     max_output_tokens: int = 4_096
 
     @property
@@ -37,10 +38,13 @@ class OpenRouterSettings:
             api_key=os.environ.get("OPENROUTER_API_KEY", "").strip(),
             allowed_models=models,
             timeout_seconds=float(os.environ.get("LLM_LAB_OPENROUTER_TIMEOUT_SECONDS", "90")),
+            execution_deadline_seconds=float(os.environ.get("LLM_LAB_OPENROUTER_EXECUTION_TIMEOUT_SECONDS", "120")),
             max_output_tokens=int(os.environ.get("LLM_LAB_OPENROUTER_MAX_OUTPUT_TOKENS", "4096")),
         )
-        if not 1 <= value.timeout_seconds <= 600 or not 1 <= value.max_output_tokens <= 16_384:
+        if not 1 <= value.timeout_seconds <= 600 or not 1 <= value.execution_deadline_seconds <= 600 or not 1 <= value.max_output_tokens <= 16_384:
             raise ValueError("OpenRouter limits are outside reviewed bounds")
+        if value.execution_deadline_seconds < value.timeout_seconds:
+            raise ValueError("OpenRouter execution deadline must cover its HTTP timeout")
         if len(value.allowed_models) > 128 or any(len(model) > 128 for model in value.allowed_models):
             raise ValueError("OpenRouter model allow-list is invalid")
         return value
@@ -73,6 +77,7 @@ class OpenRouterProvider(ToolProvider):
             # provider boundary remains visible through the open-world effect.
             risk="low",
             effect="open_world",
+            execution_deadline_seconds=self.settings.execution_deadline_seconds,
             available=self.enabled,
         ),)
 
