@@ -318,6 +318,9 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 }
 .prompt-grid button:hover { color: white; border-color: var(--line-bright); transform: translateY(-1px); }
 .message-list { width: 100%; align-self: stretch; display: grid; align-content: start; gap: 6px; }
+.load-earlier { width: max-content; margin: 0 auto 10px; padding: 7px 11px; color: #a9c9ef; border: 1px solid #2b4d74; border-radius: 8px; background: rgba(43,116,215,.09); font-size: 12px; cursor: pointer; }
+.load-earlier:hover:not(:disabled) { color: #e4f1ff; border-color: #467cb9; background: rgba(43,116,215,.16); }
+.load-earlier:disabled { opacity: .65; cursor: wait; }
 .message { padding: 18px 8px; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 13px; border-bottom: 1px solid rgba(255,255,255,.045); }
 .message-avatar { width: 31px; height: 31px; display: grid; place-items: center; color: #cbd9eb; border: 1px solid #2d3a4c; border-radius: 9px; background: #141c28; }
 .message.assistant .message-avatar { color: #ddebff; border-color: #315a8e; background: rgba(33,100,194,.18); }

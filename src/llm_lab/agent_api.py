@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import threading
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -19,7 +20,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .runtime import RuntimeState
 from .tooling.builtins import create_builtin_registry
 from .tooling.errors import ToolPolicyError, ToolingError
-from .tooling.orchestrator import AgentRunner, OpenAIChatBackend
+from .tooling.orchestrator import AgentLimits, AgentRunner, OpenAIChatBackend
 from .tooling.registry import ToolRegistry
 from .tooling.schema import AgentTurnRequest, ErrorEvent, ToolErrorDTO, ToolsetsResponse
 
@@ -29,8 +30,25 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_MAX_AGENT_REQUEST_BYTES = 64 * 1024 * 1024
+MAX_AGENT_TOTAL_TIMEOUT_SECONDS = 12 * 60 * 60
 ActiveStateResolver = Callable[[], Awaitable[RuntimeState | JSONResponse]]
 ClientGetter = Callable[[], httpx.AsyncClient]
+
+
+def configured_agent_limits() -> AgentLimits:
+    """Read the operator-selected total deadline while retaining a hard ceiling."""
+    raw = os.environ.get("LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS")
+    if raw is None:
+        return AgentLimits()
+    try:
+        timeout = float(raw)
+    except ValueError as exc:
+        raise ValueError("LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS must be a number") from exc
+    if not 1 <= timeout <= MAX_AGENT_TOTAL_TIMEOUT_SECONDS:
+        raise ValueError(
+            "LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS must be between 1 and 43200"
+        )
+    return AgentLimits(total_timeout_seconds=timeout)
 
 
 class _AgentBodyTooLarge(HTTPException):
@@ -169,7 +187,7 @@ def install_agent_api(
         raise ValueError("runner and registry must refer to the same tool registry")
     selected_registry = registry or (runner.registry if runner else create_builtin_registry())
     selected_runner = runner or AgentRunner(
-        selected_registry, OpenAIChatBackend(client_getter)
+        selected_registry, OpenAIChatBackend(client_getter), limits=configured_agent_limits()
     )
     router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 

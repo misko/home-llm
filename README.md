@@ -211,6 +211,11 @@ normalized result cap. Source URLs are retained in tool events and console
 source cards; this first version does not reject otherwise valid assistant text
 solely for omitting an inline citation.
 
+Set `LLM_LAB_AGENT_TOTAL_TIMEOUT_SECONDS` in the gateway environment to tune
+the whole-turn deadline. It defaults to 1,800 seconds and accepts values from
+1 through 43,200 seconds (12 hours); invalid values prevent the gateway from
+starting so an intended policy is never silently ignored.
+
 ```bash
 curl --no-buffer --fail-with-body http://127.0.0.1:14000/api/v1/agent/turns \
   -H 'Authorization: Bearer replace-with-a-secret' \

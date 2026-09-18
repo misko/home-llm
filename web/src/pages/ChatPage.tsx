@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type SetStateAction } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type SetStateAction } from "react";
 import {
   Bot,
   BrainCircuit,
@@ -30,6 +30,7 @@ import { Modal } from "../components/Modal";
 import {
   getActiveChatId,
   loadChats,
+  loadMessagePage,
   removeChat,
   saveChats,
   setStoredActiveChatId,
@@ -78,6 +79,7 @@ function chatTitle(messages: ChatMessage[]) {
 }
 
 function chatPreview(chat: SavedChat) {
+  if (chat.latestPreview) return chat.latestPreview;
   const last = [...chat.messages].reverse().find((message) => message.content.trim());
   return last?.content.replace(/\s+/g, " ").trim() || (chat.messages.length ? "Image conversation" : "No messages yet");
 }
@@ -234,7 +236,11 @@ export function ChatPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [reasoningByMessage, setReasoningByMessage] = useState<Record<string, string>>({});
+  const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
+  const [loadingEarlierMessages, setLoadingEarlierMessages] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollToBottomAfterLoadRef = useRef(true);
   const persistedChatsRef = useRef(new Map<string, SavedChat>());
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
@@ -262,6 +268,27 @@ export function ChatPage() {
 
   useEffect(() => {
     if (!historyReady) return;
+    let cancelled = false;
+    scrollToBottomAfterLoadRef.current = true;
+    void loadMessagePage(activeChatId).then((page) => {
+      if (cancelled) return;
+      setHasEarlierMessages(page.hasMore);
+      setChats((current) => current.map((chat) => {
+        if (chat.id !== activeChatId || chat.messages.length) return chat;
+        return { ...chat, messages: page.messages };
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [activeChatId, historyReady]);
+
+  useLayoutEffect(() => {
+    if (!historyReady || streaming || !scrollToBottomAfterLoadRef.current) return;
+    chatEndRef.current?.scrollIntoView?.({ block: "end" });
+    scrollToBottomAfterLoadRef.current = false;
+  }, [activeChatId, historyReady, messages.length]);
+
+  useEffect(() => {
+    if (!historyReady) return;
     const changedChats = chats.filter((chat) => persistedChatsRef.current.get(chat.id) !== chat);
     if (!changedChats.length) return;
     const timer = window.setTimeout(() => {
@@ -283,9 +310,35 @@ export function ChatPage() {
   function setMessages(action: SetStateAction<ChatMessage[]>) {
     updateActiveChat((chat) => {
       const nextMessages = typeof action === "function" ? action(chat.messages) : action;
-      return { ...chat, messages: nextMessages, title: chatTitle(nextMessages), updatedAt: now() };
+      const latest = [...nextMessages].reverse().find((message) => message.content.trim());
+      return {
+        ...chat, messages: nextMessages, title: chatTitle(nextMessages), updatedAt: now(),
+        messageCount: Math.max(chat.messageCount ?? 0, nextMessages.length),
+        latestPreview: latest?.content.replace(/\s+/g, " ").trim() || chat.latestPreview,
+      };
     });
   }
+
+  async function loadEarlierMessages() {
+    if (loadingEarlierMessages || !hasEarlierMessages || !messages.length) return;
+    setLoadingEarlierMessages(true);
+    const priorHeight = document.documentElement.scrollHeight;
+    const priorTop = window.scrollY;
+    try {
+      const page = await loadMessagePage(activeChatId, messages[0]);
+      setChats((current) => current.map((chat) => chat.id === activeChatId
+        ? { ...chat, messages: [...page.messages, ...chat.messages] }
+        : chat));
+      setHasEarlierMessages(page.hasMore);
+      requestAnimationFrame(() => window.scrollTo({ top: priorTop + document.documentElement.scrollHeight - priorHeight }));
+    } finally { setLoadingEarlierMessages(false); }
+  }
+
+  useEffect(() => {
+    const onScroll = () => { if (window.scrollY < 160) void loadEarlierMessages(); };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  });
 
   function updateSettings(settings: Partial<SavedChat["settings"]>) {
     updateActiveChat((chat) => ({ ...chat, settings: { ...chat.settings, ...settings }, updatedAt: now() }));
@@ -512,7 +565,7 @@ export function ChatPage() {
       <div className="chat-conversation">
       <div className="page-head conversation-head">
         <div>
-          <span className="eyebrow">SAVED CHAT · {messages.length} MESSAGES</span>
+          <span className="eyebrow">SAVED CHAT · {activeChat?.messageCount ?? messages.length} MESSAGES</span>
           <h1>{activeAlias ? `Chat with ${activeAlias}` : "Chat"}</h1>
         </div>
         <div className="head-actions">
@@ -556,6 +609,7 @@ export function ChatPage() {
           </div>
         ) : (
           <div className="message-list">
+            {hasEarlierMessages && <button className="load-earlier" disabled={loadingEarlierMessages} onClick={() => void loadEarlierMessages()}>{loadingEarlierMessages ? "Loading earlier messages…" : "Load earlier messages"}</button>}
             {messages.map((message) => (
               <article className={`message ${message.role}`} key={message.id}>
                 <div className="message-avatar">{message.role === "user" ? <User size={16} /> : <Bot size={16} />}</div>
@@ -573,6 +627,7 @@ export function ChatPage() {
                 </div>
               </article>
             ))}
+            <div ref={chatEndRef} />
           </div>
         )}
       </div>
