@@ -684,6 +684,7 @@ export function ChatPage() {
               </span>
             </label>
             <span className="composer-meta">Temperature {temperature} · Max {maxTokens}</span>
+            <button type="button" className="composer-settings" aria-label="Open generation settings" title="Generation settings" onClick={() => setSettingsOpen(true)}><Settings2 size={16} /></button>
           </div>
           {streaming
             ? <button type="button" className="stop-button" onClick={() => abortRef.current?.abort()}><Square size={14} /> Stop</button>
