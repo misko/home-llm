@@ -120,8 +120,13 @@ const server = createServer((request, response) => {
     request.on("data", (chunk) => chunks.push(chunk));
     request.on("end", () => {
       const turn = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      if (turn.toolset !== "standard-readonly") {
-        json(response, 400, { error: { code: "invalid_toolset", message: "Expected the read-only research toolset." } });
+      if (turn.toolset !== "assistant-tools") {
+        json(response, 400, { error: { code: "invalid_toolset", message: "Expected the assistant toolset." } });
+        return;
+      }
+      const expectedTools = ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write_proposal", "python_sandbox", "openrouter_delegate"];
+      if (JSON.stringify(turn.enabled_tools) !== JSON.stringify(expectedTools)) {
+        json(response, 400, { error: { code: "invalid_enabled_tools", message: "Expected the enabled assistant tool allow-list." } });
         return;
       }
       if (turn.instructions !== "Use concise language and cite sources.") {
@@ -144,8 +149,8 @@ const server = createServer((request, response) => {
           run_id: "run-search-fixture",
           sequence: 1,
           model: "local-fast",
-          toolset: "standard-readonly",
-          tools: ["web_search", "web_fetch", "calculator", "current_time"],
+          toolset: "assistant-tools",
+          tools: expectedTools,
         },
         {
           schema_version: 1,
