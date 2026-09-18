@@ -867,18 +867,10 @@ async def test_textual_tool_call_after_fetch_is_retried_as_synthesis(caplog: pyt
     assert backend.calls == 4
     assert "tools" not in backend.requests[-1]["payload"]
     assert "tool_choice" not in backend.requests[-1]["payload"]
-    assert (
-        "Tool execution is complete"
-        in backend.requests[-1]["payload"]["messages"][-1]["content"]
-    )
+    assert "Original user request:" in backend.requests[-1]["payload"]["messages"][-1]["content"]
     assert backend.requests[-1]["payload"]["messages"][-1]["role"] == "user"
-    assert [
-        index
-        for index, message in enumerate(
-            backend.requests[-1]["payload"]["messages"]
-        )
-        if message["role"] == "system"
-    ] == [0]
+    assert [message["role"] for message in backend.requests[-1]["payload"]["messages"]] == ["system", "user"]
+    assert "web_fetch" in backend.requests[-1]["payload"]["messages"][-1]["content"]
     assert "agent_final_synthesis_retry model=local-test deployment=test-active round=3" in caplog.messages
     assert "agent_final_synthesis_repaired model=local-test deployment=test-active round=4" in caplog.messages
 
