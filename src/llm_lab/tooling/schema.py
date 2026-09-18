@@ -187,6 +187,7 @@ class TurnStartedEvent(AgentEvent):
 class AssistantDeltaEvent(AgentEvent):
     type: Literal["assistant.delta"] = "assistant.delta"
     content: str
+    reasoning: str | None = Field(default=None, max_length=262_144)
     round: int = Field(ge=1)
 
 

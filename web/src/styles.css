@@ -332,6 +332,13 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .message-images img { width: 136px; height: 100px; object-fit: cover; border: 1px solid var(--line); border-radius: 8px; }
 .typing::after { content: "…"; animation: pulse 1.1s infinite; }
 @keyframes pulse { 50% { opacity: .25; } }
+.reasoning-trace, .tool-activity { margin-top: 12px; overflow: hidden; border: 1px solid #2b3e57; border-radius: 9px; background: rgba(30,65,112,.1); }
+.reasoning-trace summary, .tool-activity > summary { min-height: 40px; padding: 9px 12px; display: flex; align-items: center; gap: 8px; color: #bcd6f7; cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; }
+.reasoning-trace summary::-webkit-details-marker, .tool-activity > summary::-webkit-details-marker { display: none; }
+.reasoning-trace summary small, .tool-activity > summary small { margin-left: auto; color: var(--subtle); font: 10px "SFMono-Regular", Consolas, monospace; font-weight: 400; }
+.reasoning-trace pre { max-height: 320px; margin: 0; padding: 12px; overflow: auto; border-top: 1px solid #26374c; color: #aec6e4; font: 12px/1.6 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reasoning-trace p { margin: 0; padding: 0 12px 12px; color: var(--subtle); font-size: 12px; }
+.tool-activity-list { padding: 0 10px 10px; border-top: 1px solid rgba(255,255,255,.05); }
 .tool-call-card { margin-top: 12px; border: 1px solid #2b3e57; border-radius: 8px; background: rgba(30,65,112,.11); }
 .tool-call-card summary { padding: 10px 12px; display: flex; align-items: center; gap: 8px; color: #bcd6f7; cursor: pointer; font-size: 13px; }
 .tool-call-card pre { max-height: 280px; margin: 0; padding: 12px; overflow: auto; border-top: 1px solid #26374c; color: #a8bdd8; font-size: 12px; white-space: pre-wrap; }

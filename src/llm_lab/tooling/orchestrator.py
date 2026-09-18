@@ -627,6 +627,7 @@ class AgentRunner:
             calls = _tool_calls(message)
             if not calls:
                 content = _assistant_content(message.get("content"))
+                reasoning = _assistant_content(message.get("reasoning_content"))
                 if (
                     not available_definitions
                     and _TEXTUAL_TOOL_CALL_PATTERN.search(content)
@@ -647,6 +648,20 @@ class AgentRunner:
                         "assistant_output_too_large",
                         "Assistant output exceeded the agent limit",
                     )
+                if len(reasoning) > self.limits.max_assistant_characters:
+                    raise AgentUpstreamError(
+                        "assistant_output_too_large",
+                        "Assistant reasoning exceeded the agent limit",
+                    )
+                if reasoning:
+                    yield AssistantDeltaEvent(
+                        run_id=run_id,
+                        sequence=sequence,
+                        content="",
+                        reasoning=reasoning,
+                        round=round_number,
+                    )
+                    sequence += 1
                 # Chunking gives the browser stable incremental rendering even
                 # though this first backend adapter collects each model round.
                 for offset in range(0, len(content), 2048):

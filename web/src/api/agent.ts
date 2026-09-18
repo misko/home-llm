@@ -20,6 +20,7 @@ const POLICY_BLOCK_CODES = new Set([
 
 export interface AgentTurnUpdate {
   content: string;
+  reasoning: string;
   tools: AgentToolExecution[];
   sources: AgentSource[];
   completed: boolean;
@@ -28,6 +29,7 @@ export interface AgentTurnUpdate {
 interface AgentEvent extends Record<string, unknown> {
   type?: string;
   content?: unknown;
+  reasoning?: unknown;
   call_id?: unknown;
   tool_call_id?: unknown;
   name?: unknown;
@@ -222,11 +224,13 @@ export async function streamAgentTurn(
   const tools = new Map<string, AgentToolExecution>();
   const sources = new Map<string, AgentSource>();
   let content = "";
+  let reasoning = "";
   let completed = false;
   let buffer = "";
 
   const snapshot = (): AgentTurnUpdate => ({
     content,
+    reasoning,
     tools: [...tools.values()],
     sources: [...sources.values()],
     completed,
@@ -236,8 +240,9 @@ export async function streamAgentTurn(
     const event = eventPayload(raw, eventName);
     if (!event) return;
     const type = event.type;
-    if (type === "assistant.delta" && typeof event.content === "string") {
-      content += event.content;
+    if (type === "assistant.delta") {
+      if (typeof event.content === "string") content += event.content;
+      if (typeof event.reasoning === "string") reasoning += event.reasoning;
     } else if (type === "assistant.message" && typeof event.content === "string") {
       content = event.content;
     } else if (type === "tool.started" || type === "tool.call") {

@@ -3,6 +3,7 @@ import { ApiError } from "./client";
 
 interface StreamDelta {
   content?: string | null;
+  reasoning_content?: string | null;
   tool_calls?: Array<{
     index?: number;
     id?: string;
@@ -12,6 +13,7 @@ interface StreamDelta {
 
 export interface StreamUpdate {
   content: string;
+  reasoning: string;
   toolCalls: ToolCall[];
 }
 
@@ -65,6 +67,7 @@ export async function streamChat(
   const reader = response.body.getReader();
   let buffer = "";
   let content = "";
+  let reasoning = "";
   const tools = new Map<number, ToolCall>();
 
   const consume = (line: string) => {
@@ -74,6 +77,7 @@ export async function streamChat(
     const payload = JSON.parse(data) as { choices?: Array<{ delta?: StreamDelta }> };
     const delta = payload.choices?.[0]?.delta;
     if (typeof delta?.content === "string") content += delta.content;
+    if (typeof delta?.reasoning_content === "string") reasoning += delta.reasoning_content;
     for (const item of delta?.tool_calls ?? []) {
       const index = item.index ?? tools.size;
       const prior = tools.get(index) ?? { id: item.id ?? `tool-${index}`, name: "", arguments: "" };
@@ -83,7 +87,7 @@ export async function streamChat(
         arguments: prior.arguments + (item.function?.arguments ?? ""),
       });
     }
-    onUpdate({ content, toolCalls: [...tools.values()] });
+    onUpdate({ content, reasoning, toolCalls: [...tools.values()] });
   };
 
   while (true) {
@@ -95,5 +99,5 @@ export async function streamChat(
     if (done) break;
   }
   if (buffer) consume(buffer);
-  return { content, toolCalls: [...tools.values()] };
+  return { content, reasoning, toolCalls: [...tools.values()] };
 }

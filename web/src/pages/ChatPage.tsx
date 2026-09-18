@@ -137,6 +137,8 @@ function ToolExecutionCard({ tool, onApproveWorkspaceWrite }: {
   const statusLabel = tool.status === "running" ? "Running" : boundedFetch ? "Bounded extract" : tool.status === "completed" ? "Complete" : tool.status === "blocked" ? "Blocked" : "Failed";
   const disclosure = boundedFetch ?? (tool.name === "calculator" || tool.name === "current_time"
     ? "Runs locally · no network or writes"
+    : tool.name === "python_sandbox"
+      ? "Disposable Python · no network or host writes"
     : tool.name === "web_search" || tool.name === "web_fetch"
       ? "Sends queries and requested public pages to the internet · no writes"
       : "Read-only tool · no writes");
@@ -160,6 +162,39 @@ function ToolExecutionCard({ tool, onApproveWorkspaceWrite }: {
         {tool.status === "completed" && tool.result !== undefined && <div><span>Result</span><pre>{formatValue(tool.result)}</pre></div>}
         {proposalId && <button className="primary-button compact" onClick={() => onApproveWorkspaceWrite(tool, proposalId)}>Approve write</button>}
         {tool.error && <div className="tool-error"><span>{tool.error.code ?? "Tool error"}</span><p>{tool.error.message}</p></div>}
+      </div>
+    </details>
+  );
+}
+
+function ReasoningTrace({ reasoning, active }: { reasoning?: string; active: boolean }) {
+  if (!reasoning && !active) return null;
+  return (
+    <details className="reasoning-trace">
+      <summary>
+        <BrainCircuit size={15} />
+        <span>{reasoning ? "Model reasoning" : "Thinking"}</span>
+        {active && <LoaderCircle className="spin" size={13} />}
+        {reasoning && <small>{reasoning.length.toLocaleString()} characters</small>}
+      </summary>
+      {reasoning ? <pre>{reasoning}</pre> : <p>Waiting for the model’s reasoning stream…</p>}
+    </details>
+  );
+}
+
+function ToolActivity({ calls, executions, onApproveWorkspaceWrite }: {
+  calls: ToolCall[];
+  executions: AgentToolExecution[];
+  onApproveWorkspaceWrite: (tool: AgentToolExecution, proposalId: string) => void;
+}) {
+  const count = calls.length + executions.length;
+  if (!count) return null;
+  return (
+    <details className="tool-activity">
+      <summary><Wrench size={15} /> Tool activity <small>{count}</small></summary>
+      <div className="tool-activity-list">
+        {calls.map((tool) => <ToolCallCard key={tool.id} tool={tool} />)}
+        {executions.map((tool) => <ToolExecutionCard key={tool.id} tool={tool} onApproveWorkspaceWrite={onApproveWorkspaceWrite} />)}
       </div>
     </details>
   );
@@ -198,6 +233,7 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [reasoningByMessage, setReasoningByMessage] = useState<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const persistedChatsRef = useRef(new Map<string, SavedChat>());
 
@@ -365,6 +401,11 @@ export function ChatPage() {
     const assistant: ChatMessage = {
       id: assistantId, role: "assistant", content: "", created_at: now(), deployment_id: activeDeployment ?? undefined,
     };
+    setReasoningByMessage((current) => {
+      const next = { ...current };
+      delete next[assistantId];
+      return next;
+    });
     const requestMessages = [...messages, userMessage];
     setMessages([...requestMessages, assistant]);
     setDraft("");
@@ -377,14 +418,16 @@ export function ChatPage() {
     try {
       if (toolsEnabled && supportsTools) {
         await streamAgentTurn(requestMessages, controller.signal, (update) => {
-          assistantHasEvidence ||= Boolean(update.content || update.tools.length || update.sources.length);
+          assistantHasEvidence ||= Boolean(update.content || update.reasoning || update.tools.length || update.sources.length);
+          if (update.reasoning) setReasoningByMessage((current) => ({ ...current, [assistantId]: update.reasoning }));
           setMessages((current) => current.map((message) => message.id === assistantId
             ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources }
             : message));
         }, { temperature, maxTokens, systemPrompt, toolset });
       } else {
         await streamChat(activeAlias, requestMessages, controller.signal, (update) => {
-          assistantHasEvidence ||= Boolean(update.content || update.toolCalls.length);
+          assistantHasEvidence ||= Boolean(update.content || update.reasoning || update.toolCalls.length);
+          if (update.reasoning) setReasoningByMessage((current) => ({ ...current, [assistantId]: update.reasoning }));
           setMessages((current) => current.map((message) => message.id === assistantId
             ? { ...message, content: update.content, tool_calls: update.toolCalls }
             : message));
@@ -397,6 +440,11 @@ export function ChatPage() {
           setMessages((current) => current.filter((message) =>
             message.id !== userMessage.id && message.id !== assistantId
           ));
+          setReasoningByMessage((current) => {
+            const next = { ...current };
+            delete next[assistantId];
+            return next;
+          });
           setDraft((current) => current.trim() ? current : submittedDraft);
           setAttachments((current) => current.length ? current : submittedAttachments);
         } else {
@@ -518,9 +566,9 @@ export function ChatPage() {
                     {message.content && <button className="message-action" aria-label="Copy message" onClick={() => void navigator.clipboard?.writeText(message.content)}><Copy size={14} /></button>}
                   </header>
                   {message.attachments?.length ? <div className="message-images">{message.attachments.map((item) => <img src={item.data_url} alt={item.name} key={item.id} />)}</div> : null}
+                  {message.role === "assistant" && <ReasoningTrace reasoning={reasoningByMessage[message.id]} active={streaming && message.id === messages.at(-1)?.id} />}
                   <div className="message-content">{message.content || (streaming ? <span className="typing">Thinking</span> : "")}</div>
-                  {message.tool_calls?.map((tool) => <ToolCallCard key={tool.id} tool={tool} />)}
-                  {message.tool_executions?.map((tool) => <ToolExecutionCard key={tool.id} tool={tool} onApproveWorkspaceWrite={approveWrite} />)}
+                  <ToolActivity calls={message.tool_calls ?? []} executions={message.tool_executions ?? []} onApproveWorkspaceWrite={approveWrite} />
                   <SourceList sources={message.sources ?? []} />
                 </div>
               </article>
