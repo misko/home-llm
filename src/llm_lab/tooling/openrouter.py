@@ -49,7 +49,7 @@ class OpenRouterSettings:
             raise ValueError("OpenRouter limits are outside reviewed bounds")
         if value.execution_deadline_seconds < value.timeout_seconds:
             raise ValueError("OpenRouter execution deadline must cover its HTTP timeout")
-        if len(value.allowed_models) > 128 or any(len(model) > 128 for model in value.allowed_models):
+        if len(value.allowed_models) > 256 or any(len(model) > 128 for model in value.allowed_models):
             raise ValueError("OpenRouter model allow-list is invalid")
         return value
 
