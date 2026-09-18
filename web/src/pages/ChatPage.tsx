@@ -20,7 +20,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { approveWorkspaceWrite, PYTHON_SANDBOX_TOOLSET, RESEARCH_TOOLSET, streamAgentTurn, WORKSPACE_TOOLSET } from "../api/agent";
+import { approveWorkspaceWrite, OPENROUTER_TOOLSET, PYTHON_SANDBOX_TOOLSET, RESEARCH_TOOLSET, streamAgentTurn, WORKSPACE_TOOLSET } from "../api/agent";
 import { streamChat } from "../api/chat";
 import { createClientId } from "../api/id";
 import type { AgentSource, AgentToolExecution, ChatAttachment, ChatMessage, ToolCall } from "../api/types";
@@ -679,8 +679,8 @@ export function ChatPage() {
               <span className="toggle-track" aria-hidden="true"><span /></span>
               <ShieldCheck size={15} />
               <span className="tool-toggle-copy">
-                <strong>{toolset === WORKSPACE_TOOLSET ? "Workspace files" : toolset === PYTHON_SANDBOX_TOOLSET ? "Python sandbox" : "Research tools"}</strong>
-                <small>{supportsTools ? toolset === WORKSPACE_TOOLSET ? "Reads one approved workspace; writes need your approval" : toolset === PYTHON_SANDBOX_TOOLSET ? "Runs disposable Python with no network or host writes" : "Sends queries and requested public pages to the internet · no writes" : "Unavailable for this deployment"}</small>
+                <strong>{toolset === WORKSPACE_TOOLSET ? "Workspace files" : toolset === PYTHON_SANDBOX_TOOLSET ? "Python sandbox" : toolset === OPENROUTER_TOOLSET ? "OpenRouter delegation" : "Research tools"}</strong>
+                <small>{supportsTools ? toolset === WORKSPACE_TOOLSET ? "Reads one approved workspace; writes need your approval" : toolset === PYTHON_SANDBOX_TOOLSET ? "Runs disposable Python with no network or host writes" : toolset === OPENROUTER_TOOLSET ? "One approved remote model call; prompt leaves this machine" : "Sends queries and requested public pages to the internet · no writes" : "Unavailable for this deployment"}</small>
               </span>
             </label>
             <span className="composer-meta">Temperature {temperature} · Max {maxTokens}</span>
@@ -695,10 +695,11 @@ export function ChatPage() {
         <div className="form-stack">
           <label>Temperature <output>{temperature.toFixed(1)}</output><input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(event) => updateSettings({ temperature: Number(event.target.value) })} /></label>
           <label>Maximum output tokens<input type="number" min="1" max={maximumOutputTokens} value={maxTokens} onChange={(event) => updateSettings({ maxTokens: Math.min(maximumOutputTokens, Math.max(1, Math.trunc(Number(event.target.value) || 1))) })} /></label>
-          <label>Tool access<select value={toolset} onChange={(event) => updateSettings({ toolset: event.target.value === WORKSPACE_TOOLSET ? WORKSPACE_TOOLSET : event.target.value === PYTHON_SANDBOX_TOOLSET ? PYTHON_SANDBOX_TOOLSET : RESEARCH_TOOLSET })}>
+          <label>Tool access<select value={toolset} onChange={(event) => updateSettings({ toolset: event.target.value === WORKSPACE_TOOLSET ? WORKSPACE_TOOLSET : event.target.value === PYTHON_SANDBOX_TOOLSET ? PYTHON_SANDBOX_TOOLSET : event.target.value === OPENROUTER_TOOLSET ? OPENROUTER_TOOLSET : RESEARCH_TOOLSET })}>
             <option value={RESEARCH_TOOLSET}>Public research · read-only</option>
             <option value={WORKSPACE_TOOLSET}>Approved workspace · writes need approval</option>
             <option value={PYTHON_SANDBOX_TOOLSET}>Python sandbox · no network or host writes</option>
+            <option value={OPENROUTER_TOOLSET}>OpenRouter delegation · sends prompt to a remote model</option>
           </select></label>
           <p className="modal-note">
             {defaultMaximumOutputTokens.toLocaleString()} is a ceiling, not a target. Prompt, history, reasoning, and reply share the active {runtime.data?.context_size?.toLocaleString() ?? "model"}-token context; tool-enabled turns also have safety deadlines.

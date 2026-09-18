@@ -9,6 +9,7 @@ import type {
 export const RESEARCH_TOOLSET = "standard-readonly";
 export const WORKSPACE_TOOLSET = "workspace-files";
 export const PYTHON_SANDBOX_TOOLSET = "python-sandbox";
+export const OPENROUTER_TOOLSET = "openrouter-delegation";
 const MAX_SERVER_ERROR_MESSAGE = 512;
 const MAX_INSTRUCTIONS_LENGTH = 16_384;
 const POLICY_BLOCK_CODES = new Set([

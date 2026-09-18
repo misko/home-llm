@@ -23,6 +23,7 @@ import httpx
 from .errors import ToolExecutionError, ToolPolicyError
 from .registry import ToolDefinition, ToolProvider, ToolRegistry, ToolsetDefinition
 from .python_sandbox import PythonSandboxProvider, PythonSandboxSettings
+from .openrouter import OpenRouterProvider, OpenRouterSettings
 from .workspace import WorkspaceSettings, WorkspaceToolProvider
 
 
@@ -1047,6 +1048,17 @@ def create_builtin_registry(
                     "are staged and never committed automatically."
                 ),
                 tools=("python_sandbox",),
+            )
+        )
+    openrouter = OpenRouterProvider(OpenRouterSettings.from_environment())
+    registry.register_provider(openrouter)
+    if openrouter.enabled:
+        registry.register_toolset(
+            ToolsetDefinition(
+                id="openrouter-delegation",
+                name="OpenRouter delegation",
+                description="One bounded call to an operator-approved remote model. Prompts leave this machine.",
+                tools=("openrouter_delegate",),
             )
         )
     return registry
