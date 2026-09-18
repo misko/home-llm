@@ -69,7 +69,9 @@ class OpenRouterProvider(ToolProvider):
             parameters={"type": "object", **closed, "required": ["model", "prompt"], "properties": {"model": {"type": "string", "maxLength": 128}, "prompt": {"type": "string", "minLength": 1, "maxLength": _MAX_PROMPT_CHARACTERS}}},
             output_schema={"type": "object", **closed, "required": ["model", "content", "usage"], "properties": {"model": {"type": "string"}, "content": {"type": "string", "maxLength": _MAX_OUTPUT_CHARACTERS}, "usage": {"type": "object", **closed, "properties": {"prompt_tokens": {"type": "integer", "minimum": 0}, "completion_tokens": {"type": "integer", "minimum": 0}, "total_tokens": {"type": "integer", "minimum": 0}}}}},
             handler=self.delegate,
-            risk="high",
+            # It is a read-only, bounded request in a dedicated toolset. The
+            # provider boundary remains visible through the open-world effect.
+            risk="low",
             effect="open_world",
             available=self.enabled,
         ),)
@@ -101,4 +103,3 @@ class OpenRouterProvider(ToolProvider):
     async def aclose(self) -> None:
         if self._owns_client:
             await self._client.aclose()
-
