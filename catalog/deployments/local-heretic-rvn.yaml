@@ -7,7 +7,7 @@ executable: ${LLM_LAB_DATA}/cache/runtimes/llama-cpp-cuda-4090/llama-server
 runtime_lock_id: llama-cpp-cuda-4090
 host: 127.0.0.1
 port: 18092
-context_size: 8192
+context_size: 32768
 parallel: 1
 gpu_layers: all
 flash_attention: true
