@@ -4,6 +4,7 @@ import type {
   AgentToolError,
   AgentToolExecution,
   ChatMessage,
+  ResponseProvenance,
 } from "./types";
 
 export const RESEARCH_TOOLSET = "standard-readonly";
@@ -18,6 +19,7 @@ const POLICY_BLOCK_CODES = new Set([
   "open_world_chain_blocked",
   "tool_not_permitted",
   "tool_requires_approval",
+  "duplicate_tool_call",
 ]);
 
 export interface AgentTurnUpdate {
@@ -26,6 +28,7 @@ export interface AgentTurnUpdate {
   tools: AgentToolExecution[];
   sources: AgentSource[];
   completed: boolean;
+  provenance: ResponseProvenance;
 }
 
 interface AgentEvent extends Record<string, unknown> {
@@ -251,6 +254,11 @@ export async function streamAgentTurn(
   let content = "";
   let reasoning = "";
   let completed = false;
+  const provenance: ResponseProvenance = {
+    tools_used: [],
+    delegated_models: [],
+    recovery_reasons: [],
+  };
   let buffer = "";
 
   const snapshot = (): AgentTurnUpdate => ({
@@ -259,13 +267,16 @@ export async function streamAgentTurn(
     tools: [...tools.values()],
     sources: [...sources.values()],
     completed,
+    provenance: { ...provenance },
   });
 
   const consumeEvent = (raw: unknown, eventName?: string) => {
     const event = eventPayload(raw, eventName);
     if (!event) return;
     const type = event.type;
-    if (type === "assistant.delta") {
+    if (type === "turn.started") {
+      if (typeof event.model === "string") provenance.local_model = event.model;
+    } else if (type === "assistant.delta") {
       if (typeof event.content === "string") content += event.content;
       if (typeof event.reasoning === "string") reasoning += event.reasoning;
     } else if (type === "assistant.message" && typeof event.content === "string") {
@@ -278,6 +289,7 @@ export async function streamAgentTurn(
         name: typeof event.name === "string" ? event.name : "tool",
         arguments: event.arguments,
         status: "running",
+        round: typeof event.round === "number" ? event.round : undefined,
       });
     } else if (type === "tool.completed" || type === "tool.result") {
       const idValue = event.call_id ?? event.tool_call_id;
@@ -289,6 +301,8 @@ export async function streamAgentTurn(
         arguments: event.arguments ?? prior?.arguments,
         status: "completed",
         result: event.result,
+        round: typeof event.round === "number" ? event.round : prior?.round,
+        duration_ms: typeof event.duration_ms === "number" ? event.duration_ms : undefined,
       });
       for (const source of extractSources(event.result)) {
         const priorSource = sources.get(source.url);
@@ -309,9 +323,22 @@ export async function streamAgentTurn(
         arguments: event.arguments ?? prior?.arguments,
         status: error.code && POLICY_BLOCK_CODES.has(error.code) ? "blocked" : "failed",
         error,
+        round: typeof event.round === "number" ? event.round : prior?.round,
+        duration_ms: typeof event.duration_ms === "number" ? event.duration_ms : undefined,
       });
     } else if (type === "turn.completed" || type === "run.completed") {
       completed = true;
+      if (typeof event.model === "string") provenance.local_model = event.model;
+      provenance.rounds = typeof event.rounds === "number" ? event.rounds : undefined;
+      provenance.tools_used = Array.isArray(event.tools_used)
+        ? event.tools_used.filter((item): item is string => typeof item === "string")
+        : [];
+      provenance.delegated_models = Array.isArray(event.delegated_models)
+        ? event.delegated_models.filter((item): item is string => typeof item === "string")
+        : [];
+      provenance.recovery_reasons = Array.isArray(event.recovery_reasons)
+        ? event.recovery_reasons.filter((item): item is string => typeof item === "string")
+        : [];
     } else if (type === "turn.failed" || type === "error") {
       const failure = errorMessage(event.error ?? event);
       throw new ApiError(502, failure.code ?? "agent_failed", failure.message, failure.retryable);

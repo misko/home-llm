@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -66,6 +67,12 @@ _MODEL_CONTEXT_CHARACTERS_PER_TOKEN = 2
 _MINIMUM_REPLY_TOKENS = 512
 _MAXIMUM_REPLY_TOKENS = 8192
 _MAXIMUM_REPLY_CONTEXT_FRACTION = 4
+_REPEATED_ANSWER_MINIMUM_CHARACTERS = 240
+_REPEATED_ANSWER_SIMILARITY = 0.92
+_REPEAT_REQUEST_PATTERN = re.compile(
+    r"\b(?:repeat|reproduce|verbatim)\b|\b(?:quote|show|send|say)\b.{0,40}\b(?:again|previous|last|same)\b",
+    flags=re.IGNORECASE | re.DOTALL,
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -404,6 +411,115 @@ def _compact_tool_content(content: str, maximum_characters: int) -> str:
     )
 
 
+def _message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, Sequence) and not isinstance(content, (str, bytes)):
+        return "\n".join(
+            str(getattr(part, "text", ""))
+            for part in content
+            if getattr(part, "text", "")
+        )
+    return ""
+
+
+def _normalized_answer(content: str) -> str:
+    content = re.sub(r"[`*_>#|~-]+", " ", content.casefold())
+    return re.sub(r"\s+", " ", content).strip()
+
+
+def _answer_shingles(content: str, size: int = 5) -> set[tuple[str, ...]]:
+    words = _normalized_answer(content).split()[:8192]
+    if len(words) < size:
+        return {tuple(words)} if words else set()
+    return {tuple(words[index : index + size]) for index in range(len(words) - size + 1)}
+
+
+def _answer_similarity(left: str, right: str) -> float:
+    normalized_left = _normalized_answer(left)
+    normalized_right = _normalized_answer(right)
+    if normalized_left == normalized_right:
+        return 1.0
+    left_shingles = _answer_shingles(normalized_left)
+    right_shingles = _answer_shingles(normalized_right)
+    union = left_shingles | right_shingles
+    return len(left_shingles & right_shingles) / len(union) if union else 0.0
+
+
+def _repeated_prior_answer(
+    request: AgentTurnRequest, content: str
+) -> tuple[str | None, float]:
+    latest = _message_text(request.messages[-1].content)
+    if (
+        len(_normalized_answer(content)) < _REPEATED_ANSWER_MINIMUM_CHARACTERS
+        or _REPEAT_REQUEST_PATTERN.search(latest)
+    ):
+        return None, 0.0
+    closest: str | None = None
+    score = 0.0
+    for message in request.messages[:-1]:
+        if message.role != "assistant":
+            continue
+        prior = _message_text(message.content)
+        candidate = _answer_similarity(content, prior)
+        if candidate > score:
+            closest, score = prior, candidate
+    return (closest, score) if score >= _REPEATED_ANSWER_SIMILARITY else (None, score)
+
+
+def _repetition_recovery_messages(
+    request: AgentTurnRequest,
+    repeated_answer: str,
+    messages: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    latest = _message_text(request.messages[-1].content)
+    evidence: list[str] = []
+    for message in messages:
+        if message.get("role") != "tool" or not isinstance(message.get("content"), str):
+            continue
+        name = message.get("name") if isinstance(message.get("name"), str) else "tool"
+        evidence.append(f"{name}: {_compact_tool_content(message['content'], 4096)}")
+    evidence_section = (
+        "\n\nFresh tool evidence from this turn:\n" + "\n\n".join(evidence)
+        if evidence
+        else ""
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "Answer the latest user request directly. A previous answer was repeated "
+                "instead of addressing the new request. Treat the prior answer below only "
+                "as reference material. Do not copy its structure or claim that a remote "
+                "model or tool was used in this turn. Return plain user-facing text."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Latest user request:\n"
+                + latest
+                + "\n\nPrevious answer that must not be repeated:\n"
+                + repeated_answer[:12_000]
+                + evidence_section
+            ),
+        },
+    ]
+
+
+def _tool_fingerprint(name: str, arguments: Mapping[str, Any]) -> str:
+    canonical = json.dumps(
+        {"name": name, "arguments": dict(arguments)},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        # Fingerprinting must also bound malformed/non-finite calls so they
+        # cannot evade duplicate detection before schema validation.
+        allow_nan=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _final_synthesis_retry_messages(
     request: AgentTurnRequest, messages: Sequence[Mapping[str, Any]], *, backend_error: Mapping[str, str] | None = None
 ) -> list[dict[str, Any]]:
@@ -434,7 +550,8 @@ def _final_synthesis_retry_messages(
         },
         {
             "role": "user",
-            "content": "Original user request:\n"
+            "content": _FINAL_SYNTHESIS_PROMPT
+            + "\n\nOriginal user request:\n"
             + user_request
             + "\n\nCollected tool evidence:\n"
             + "\n\n".join(evidence)
@@ -626,11 +743,26 @@ class AgentRunner:
         sequence += 1
         cumulative_usage: dict[str, int] = {}
         seen_call_ids: set[str] = set()
+        tool_attempts: dict[str, tuple[int, bool]] = {}
+        tools_used: list[str] = []
+        delegated_models: list[str] = []
+        recovery_reasons: list[str] = []
         turn_policy = TurnToolPolicy(request)
         generation_tokens_remaining = self.limits.max_cumulative_generation_tokens
         textual_tool_call_retry_used = False
         backend_tool_parse_retry_used = False
+        repeated_answer_retry_used = False
         final_synthesis_mode = False
+
+        latest_user = _message_text(request.messages[-1].content)
+        LOGGER.info(
+            "agent_turn_started run=%s model=%s deployment=%s latest_user_sha256=%s latest_user_chars=%d",
+            run_id,
+            model,
+            deployment,
+            hashlib.sha256(latest_user.encode("utf-8")).hexdigest(),
+            len(latest_user),
+        )
 
         max_rounds = request.max_rounds or self.limits.max_rounds
         for round_number in range(1, max_rounds + 1):
@@ -736,6 +868,28 @@ class AgentRunner:
                     )
                     messages = _final_synthesis_retry_messages(request, messages)
                     continue
+                repeated_answer, similarity = _repeated_prior_answer(request, content)
+                if repeated_answer is not None:
+                    LOGGER.warning(
+                        "agent_repeated_answer run=%s model=%s deployment=%s round=%d similarity=%.3f output_sha256=%s",
+                        run_id,
+                        model,
+                        deployment,
+                        round_number,
+                        similarity,
+                        hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                    )
+                    if repeated_answer_retry_used:
+                        raise AgentUpstreamError(
+                            "model_repeated_previous_answer",
+                            "The active model repeated a previous answer instead of addressing the latest request",
+                            retryable=True,
+                        )
+                    repeated_answer_retry_used = True
+                    final_synthesis_mode = True
+                    recovery_reasons.append("repeated_answer")
+                    messages = _repetition_recovery_messages(request, repeated_answer, messages)
+                    continue
                 if textual_tool_call_retry_used:
                     LOGGER.info(
                         "agent_final_synthesis_repaired model=%s deployment=%s round=%d",
@@ -787,6 +941,9 @@ class AgentRunner:
                     rounds=round_number,
                     finish_reason=finish_reason,
                     usage=cumulative_usage,
+                    tools_used=tuple(tools_used),
+                    delegated_models=tuple(delegated_models),
+                    recovery_reasons=tuple(recovery_reasons),
                 )
                 return
 
@@ -858,11 +1015,27 @@ class AgentRunner:
                     "tool_calls": assistant_calls,
                 }
             )
+            duplicate_tool_detected = False
             for call_id, name, arguments, serialized_arguments in parsed_calls:
                 started = time.monotonic()
                 definition = None
                 preflight_error: ToolingError | None = None
-                if arguments is None:
+                fingerprint = (
+                    _tool_fingerprint(name, arguments)
+                    if arguments is not None
+                    else hashlib.sha256(
+                        (name + "\0" + serialized_arguments).encode("utf-8")
+                    ).hexdigest()
+                )
+                attempts, succeeded = tool_attempts.get(fingerprint, (0, False))
+                duplicate_blocked = succeeded or attempts >= 2
+                if duplicate_blocked:
+                    duplicate_tool_detected = True
+                    preflight_error = ToolPolicyError(
+                        "duplicate_tool_call",
+                        "The same tool call was already completed or retried in this turn",
+                    )
+                elif arguments is None:
                     preflight_error = ToolPolicyError(
                         "invalid_tool_arguments",
                         f"Arguments for {name!r} must be a JSON object",
@@ -902,8 +1075,20 @@ class AgentRunner:
                     execution_error = execution.error
                     if execution_error is None:
                         turn_policy.observe(definition, execution_value)
+                if not duplicate_blocked:
+                    prior_attempts, _ = tool_attempts.get(fingerprint, (0, False))
+                    tool_attempts[fingerprint] = (
+                        prior_attempts + 1,
+                        execution_error is None,
+                    )
                 duration_ms = max(0.0, (time.monotonic() - started) * 1000)
                 if execution_error is None:
+                    if name not in tools_used:
+                        tools_used.append(name)
+                    if name == "openrouter_delegate" and isinstance(execution_value, Mapping):
+                        delegated = execution_value.get("model")
+                        if isinstance(delegated, str) and delegated not in delegated_models:
+                            delegated_models.append(delegated)
                     yield ToolCompletedEvent(
                         run_id=run_id,
                         sequence=sequence,
@@ -946,6 +1131,28 @@ class AgentRunner:
                             allow_nan=False,
                         ),
                     }
+                )
+
+            if duplicate_tool_detected:
+                LOGGER.warning(
+                    "agent_duplicate_tool_recovery run=%s model=%s deployment=%s round=%d",
+                    run_id,
+                    model,
+                    deployment,
+                    round_number,
+                )
+                recovery_reasons.append("duplicate_tool_call")
+                final_synthesis_mode = True
+                messages = _final_synthesis_retry_messages(
+                    request,
+                    messages,
+                    backend_error={
+                        "source": "agent_policy",
+                        "code": "duplicate_tool_call",
+                        "stage": "tool_execution",
+                        "detail": "An identical tool call was already completed or retried.",
+                        "retry_instruction": "Do not call tools. Answer using evidence already collected.",
+                    },
                 )
 
         raise ToolPolicyError(

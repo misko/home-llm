@@ -226,6 +226,9 @@ const server = createServer((request, response) => {
           rounds: 2,
           finish_reason: "stop",
           usage: { prompt_tokens: 27, completion_tokens: 18, total_tokens: 45 },
+          tools_used: ["web_search", "calculator"],
+          delegated_models: [],
+          recovery_reasons: [],
         },
       ];
       let index = 0;

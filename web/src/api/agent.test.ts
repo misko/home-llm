@@ -20,7 +20,7 @@ describe("streamAgentTurn", () => {
       ": keepalive\n\nid: 2\nevent: tool.started\ndata: {\"schema_version\":1,\"run_id\":\"run-1\",\"sequence\":2,\"type\":\"tool.started\",\"call_id\":\"search-1\",\"name\":\"web_search\",\"arguments\":{\"query\":\"local LLMs\"},\"round\":1}\n\n",
       "data: not-json\n\n",
       "id: 3\nevent: tool.completed\ndata: {\"schema_version\":1,\"run_id\":\"run-1\",\"sequence\":3,\"type\":\"tool.completed\",\"call_id\":\"search-1\",\"name\":\"web_search\",\"result\":{\"results\":[{\"title\":\"Model guide\",\"url\":\"https://example.com/models\",\"snippet\":\"A useful guide\"},{\"title\":\"Unsafe\",\"url\":\"javascript:alert(1)\"}]},\"round\":1,\"duration_ms\":12.5}\n",
-      "\nid: 4\nevent: assistant.delta\ndata: {\"schema_version\":1,\"run_id\":\"run-1\",\"sequence\":4,\"type\":\"assistant.delta\",\"content\":\"I found one source.\",\"reasoning\":\"I checked the source.\",\"round\":2}\n\nid: 5\nevent: turn.completed\ndata: {\"schema_version\":1,\"run_id\":\"run-1\",\"sequence\":5,\"type\":\"turn.completed\",\"model\":\"local-fast\",\"rounds\":2,\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":27,\"completion_tokens\":18,\"total_tokens\":45}}\n\n",
+      "\nid: 4\nevent: assistant.delta\ndata: {\"schema_version\":1,\"run_id\":\"run-1\",\"sequence\":4,\"type\":\"assistant.delta\",\"content\":\"I found one source.\",\"reasoning\":\"I checked the source.\",\"round\":2}\n\nid: 5\nevent: turn.completed\ndata: {\"schema_version\":1,\"run_id\":\"run-1\",\"sequence\":5,\"type\":\"turn.completed\",\"model\":\"local-fast\",\"rounds\":2,\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":27,\"completion_tokens\":18,\"total_tokens\":45},\"tools_used\":[\"web_search\"],\"delegated_models\":[],\"recovery_reasons\":[]}\n\n",
     ];
     let requestBody: Record<string, unknown> | undefined;
     vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -61,11 +61,20 @@ describe("streamAgentTurn", () => {
       content: "I found one source.",
       reasoning: "I checked the source.",
       completed: true,
+      provenance: {
+        local_model: "local-fast",
+        tools_used: ["web_search"],
+        delegated_models: [],
+        recovery_reasons: [],
+        rounds: 2,
+      },
       tools: [{
         id: "search-1",
         name: "web_search",
         arguments: { query: "local LLMs" },
         status: "completed",
+        round: 1,
+        duration_ms: 12.5,
         result: {
           results: [
             { title: "Model guide", url: "https://example.com/models", snippet: "A useful guide" },
@@ -75,7 +84,7 @@ describe("streamAgentTurn", () => {
       }],
       sources: [{ title: "Model guide", url: "https://example.com/models", snippet: "A useful guide" }],
     });
-    expect(updates).toEqual(["", "", "I found one source.", "I found one source."]);
+    expect(updates).toEqual(["", "", "", "I found one source.", "I found one source."]);
   });
 
   it("accepts compatibility aliases and exposes tool failures", async () => {

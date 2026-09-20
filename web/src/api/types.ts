@@ -195,6 +195,15 @@ export interface ChatMessage {
   tool_executions?: AgentToolExecution[];
   sources?: AgentSource[];
   attachments?: ChatAttachment[];
+  provenance?: ResponseProvenance;
+}
+
+export interface ResponseProvenance {
+  local_model?: string;
+  tools_used: string[];
+  delegated_models: string[];
+  recovery_reasons: string[];
+  rounds?: number;
 }
 
 export interface ChatAttachment {
@@ -226,6 +235,8 @@ export interface AgentToolExecution {
   status: AgentToolStatus;
   result?: unknown;
   error?: AgentToolError;
+  round?: number;
+  duration_ms?: number;
 }
 
 export interface AgentSource {

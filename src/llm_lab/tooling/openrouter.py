@@ -57,7 +57,10 @@ class OpenRouterSettings:
 class OpenRouterProvider(ToolProvider):
     def __init__(self, settings: OpenRouterSettings, *, client: httpx.AsyncClient | None = None) -> None:
         self.settings = settings
-        self._client = client or httpx.AsyncClient(timeout=settings.timeout_seconds)
+        self._client = client or httpx.AsyncClient(
+            timeout=settings.timeout_seconds,
+            trust_env=False,
+        )
         self._owns_client = client is None
         self._tools = self._build_tools()
 

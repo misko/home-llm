@@ -41,6 +41,7 @@ test("executes a read-only web search and renders its cited final answer", async
   await expect(calculatorCard).toContainText("Calculator");
   await expect(calculatorCard).toContainText("Runs locally · no network or writes");
   await expect(page.locator(".message-content").filter({ hasText: "I found it through the read-only research tool." })).toBeVisible();
+  await expect(page.getByText("Local model + 2 tools", { exact: true })).toBeVisible();
 
   const source = page.getByRole("link", { name: /SearXNG search documentation/ });
   await expect(source).toHaveAttribute("href", "https://docs.searxng.org/dev/search_api.html");

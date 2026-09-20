@@ -210,6 +210,52 @@ async def test_openrouter_refusal_is_non_retryable() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_completion_reports_verified_openrouter_provenance() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "Delegated evidence."}}],
+            "usage": {"total_tokens": 9},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    provider = OpenRouterProvider(
+        OpenRouterSettings(api_key="test-key", allowed_models=("openai/gpt-test",)),
+        client=client,
+    )
+    registry = ToolRegistry()
+    registry.register_provider(provider)
+    registry.register_toolset(ToolsetDefinition(
+        id="openrouter-delegation",
+        name="OpenRouter",
+        description="OpenRouter",
+        tools=("openrouter_delegate",),
+    ))
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-test","prompt":"Review this."}',
+        ),
+        _final_response("The delegated review is complete."),
+    ])
+    try:
+        events = [event async for event in AgentRunner(registry, backend).run(
+            AgentTurnRequest(
+                messages=({"role": "user", "content": "Ask the remote reviewer."},),
+                toolset="openrouter-delegation",
+            ),
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert events[-1].tools_used == ("openrouter_delegate",)
+    assert events[-1].delegated_models == ("openai/gpt-test",)
+
+
+@pytest.mark.asyncio
 async def test_agent_endpoint_executes_tool_and_returns_typed_sse(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     _publish_state(paths)
@@ -895,6 +941,108 @@ async def test_backend_tool_parse_error_retries_with_sanitized_error_context() -
     context = retry["messages"][1]["content"]
     assert '"code":"tool_arguments_json_parse_error"' in context
     assert "raw backend detail" not in context
+
+
+@pytest.mark.asyncio
+async def test_repeated_previous_answer_gets_clean_recovery_and_provenance(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    previous = (
+        "SOL completed its review. "
+        + "The prior report contains several detailed component recommendations. " * 12
+    )
+    backend = _ScriptedBackend([
+        _final_response(previous),
+        _final_response("Yes. The BOM already lists two series bleeder resistors; verify the per-resistor working-voltage rating."),
+    ])
+    runner = AgentRunner(create_builtin_registry(), backend)
+    request = AgentTurnRequest(messages=(
+        {"role": "user", "content": "Review the BOM."},
+        {"role": "assistant", "content": previous},
+        {"role": "user", "content": "Has the bleeder voltage-rating issue been addressed?"},
+    ))
+
+    events = [event async for event in runner.run(
+        request,
+        model="local-test",
+        deployment="test-active",
+        base_url="http://backend.invalid/v1",
+    )]
+
+    assert backend.calls == 2
+    assert events[-2].content.startswith("Yes. The BOM")
+    assert events[-1].type == "turn.completed"
+    assert events[-1].recovery_reasons == ("repeated_answer",)
+    retry = backend.requests[1]["payload"]
+    assert "tools" not in retry and "tool_choice" not in retry
+    assert "Latest user request:" in retry["messages"][1]["content"]
+    assert "agent_repeated_answer" in " ".join(caplog.messages)
+
+
+@pytest.mark.asyncio
+async def test_explicit_repeat_request_allows_previous_answer() -> None:
+    previous = "Repeatable detailed answer. " * 20
+    backend = _ScriptedBackend([_final_response(previous)])
+    runner = AgentRunner(create_builtin_registry(), backend)
+    request = AgentTurnRequest(messages=(
+        {"role": "user", "content": "Give me the report."},
+        {"role": "assistant", "content": previous},
+        {"role": "user", "content": "Repeat the previous answer verbatim."},
+    ))
+
+    events = [event async for event in runner.run(
+        request, model="local-test", deployment="test-active", base_url="http://backend.invalid/v1",
+    )]
+
+    assert backend.calls == 1
+    assert events[-1].type == "turn.completed"
+    assert events[-1].recovery_reasons == ()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_successful_tool_call_is_blocked_then_synthesized() -> None:
+    backend = _ScriptedBackend([
+        _tool_response("calculator", '{"expression":"2 + 2"}', call_id="first"),
+        _tool_response("calculator", '{"expression":"2 + 2"}', call_id="second"),
+        _final_response("The answer is 4."),
+    ])
+    runner = AgentRunner(create_builtin_registry(), backend)
+    request = AgentTurnRequest(messages=({"role": "user", "content": "Calculate 2+2."},))
+
+    events = [event async for event in runner.run(
+        request, model="local-test", deployment="test-active", base_url="http://backend.invalid/v1",
+    )]
+
+    failures = [event for event in events if event.type == "tool.failed"]
+    assert len(failures) == 1
+    assert failures[0].error.code == "duplicate_tool_call"
+    assert events[-1].tools_used == ("calculator",)
+    assert events[-1].recovery_reasons == ("duplicate_tool_call",)
+    assert "tools" not in backend.requests[2]["payload"]
+
+
+@pytest.mark.asyncio
+async def test_repeated_malformed_tool_call_is_bounded() -> None:
+    backend = _ScriptedBackend([
+        _tool_response("calculator", "not-json", call_id="first"),
+        _tool_response("calculator", "not-json", call_id="second"),
+        _tool_response("calculator", "not-json", call_id="third"),
+        _final_response("I could not complete the calculation."),
+    ])
+    runner = AgentRunner(create_builtin_registry(), backend)
+    request = AgentTurnRequest(messages=({"role": "user", "content": "Calculate this."},))
+
+    events = [event async for event in runner.run(
+        request, model="local-test", deployment="test-active", base_url="http://backend.invalid/v1",
+    )]
+
+    failures = [event for event in events if event.type == "tool.failed"]
+    assert [event.error.code for event in failures] == [
+        "invalid_tool_arguments",
+        "invalid_tool_arguments",
+        "duplicate_tool_call",
+    ]
+    assert events[-1].recovery_reasons == ("duplicate_tool_call",)
 
 
 @pytest.mark.asyncio

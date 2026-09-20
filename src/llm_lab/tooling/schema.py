@@ -235,6 +235,9 @@ class TurnCompletedEvent(AgentEvent):
     rounds: int = Field(ge=1)
     finish_reason: str
     usage: dict[str, int]
+    tools_used: tuple[str, ...] = ()
+    delegated_models: tuple[str, ...] = ()
+    recovery_reasons: tuple[str, ...] = ()
 
 
 class ErrorEvent(AgentEvent):

@@ -332,6 +332,10 @@ code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospac
 .message-action { margin-left: auto; padding: 5px; display: grid; place-items: center; color: var(--subtle); border: 0; background: transparent; }
 .message-action:hover { color: white; }
 .message-content { color: #dbe5f2; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.response-provenance { width: max-content; max-width: 100%; margin: 2px 0 10px; padding: 4px 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: #a9c9ef; border: 1px solid rgba(83,145,221,.22); border-radius: 99px; background: rgba(43,116,215,.07); font-size: 10px; }
+.response-provenance.legacy { color: var(--subtle); border-color: rgba(255,255,255,.09); background: rgba(255,255,255,.025); }
+.response-provenance small { padding-left: 6px; color: var(--subtle); border-left: 1px solid rgba(255,255,255,.1); font-size: 9px; }
+.response-provenance small.recovery { color: #f5cf8d; }
 .message-images { margin: 5px 0 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .message-images img { width: 136px; height: 100px; object-fit: cover; border: 1px solid var(--line); border-radius: 8px; }
 .typing::after { content: "…"; animation: pulse 1.1s infinite; }

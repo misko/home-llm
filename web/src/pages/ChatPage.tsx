@@ -23,7 +23,7 @@ import {
 import { approveWorkspaceWrite, ASSISTANT_TOOLSET, streamAgentTurn } from "../api/agent";
 import { streamChat } from "../api/chat";
 import { createClientId } from "../api/id";
-import type { AgentSource, AgentToolExecution, ChatAttachment, ChatMessage, ToolCall } from "../api/types";
+import type { AgentSource, AgentToolExecution, ChatAttachment, ChatMessage, ResponseProvenance, ToolCall } from "../api/types";
 import { usePortfolio, useRuntime } from "../hooks/useConsoleData";
 import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
@@ -155,7 +155,7 @@ function ToolExecutionCard({ tool, onApproveWorkspaceWrite }: {
         <span className="tool-icon"><Wrench size={14} /></span>
         <span className="tool-identity">
           <strong>{toolLabel(tool.name)}</strong>
-          <small>{disclosure}</small>
+          <small>{tool.round ? `Round ${tool.round} · ` : ""}{disclosure}</small>
         </span>
         <span className={"tool-status " + statusClass}>
           {tool.status === "running" ? <LoaderCircle className="spin" size={13} /> : tool.status === "completed" ? <CheckCircle2 size={13} /> : tool.status === "blocked" ? <ShieldCheck size={13} /> : <X size={13} />}
@@ -169,6 +169,28 @@ function ToolExecutionCard({ tool, onApproveWorkspaceWrite }: {
         {tool.error && <div className="tool-error"><span>{tool.error.code ?? "Tool error"}</span><p>{tool.error.message}</p></div>}
       </div>
     </details>
+  );
+}
+
+function ResponseProvenanceRow({ provenance }: { provenance?: ResponseProvenance }) {
+  if (!provenance) {
+    return <div className="response-provenance legacy"><ShieldCheck size={13} /> Legacy response · provenance unavailable</div>;
+  }
+  const delegated = provenance.delegated_models;
+  const tools = provenance.tools_used;
+  const label = delegated.length
+    ? `Local model + OpenRouter · ${delegated.join(", ")}`
+    : tools.length
+      ? `Local model + ${tools.length} tool${tools.length === 1 ? "" : "s"}`
+      : "Local model only";
+  return (
+    <div className="response-provenance">
+      <ShieldCheck size={13} />
+      <span>{label}</span>
+      {provenance.rounds && <small>{provenance.rounds} round{provenance.rounds === 1 ? "" : "s"}</small>}
+      {provenance.recovery_reasons.includes("repeated_answer") && <small className="recovery">Repeated answer detected · regenerated</small>}
+      {provenance.recovery_reasons.includes("duplicate_tool_call") && <small className="recovery">Duplicate tool call blocked</small>}
+    </div>
   );
 }
 
@@ -459,6 +481,7 @@ export function ChatPage() {
     const assistantId = createClientId();
     const assistant: ChatMessage = {
       id: assistantId, role: "assistant", content: "", created_at: now(), deployment_id: activeDeployment ?? undefined,
+      provenance: { local_model: activeAlias, tools_used: [], delegated_models: [], recovery_reasons: [] },
     };
     setReasoningByMessage((current) => {
       const next = { ...current };
@@ -480,7 +503,7 @@ export function ChatPage() {
           assistantHasEvidence ||= Boolean(update.content || update.reasoning || update.tools.length || update.sources.length);
           if (update.reasoning) setReasoningByMessage((current) => ({ ...current, [assistantId]: update.reasoning }));
           setMessages((current) => current.map((message) => message.id === assistantId
-            ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources }
+            ? { ...message, content: update.content, tool_executions: update.tools, sources: update.sources, provenance: update.provenance }
             : message));
         }, { temperature, maxTokens, maxToolRounds, systemPrompt, toolset: ASSISTANT_TOOLSET, allowWorkspaceWrites: workspaceEnabled, enabledTools: ["web_search", "web_fetch", "calculator", "current_time", ...(workspaceEnabled ? ["workspace_list", "workspace_read", "workspace_write"] : []), ...(pythonEnabled ? ["python_sandbox"] : []), ...(openRouterEnabled ? ["openrouter_delegate"] : [])] });
       } else {
@@ -627,6 +650,7 @@ export function ChatPage() {
                   </header>
                   {message.attachments?.length ? <div className="message-images">{message.attachments.map((item) => <img src={item.data_url} alt={item.name} key={item.id} />)}</div> : null}
                   {message.role === "assistant" && <ReasoningTrace reasoning={reasoningByMessage[message.id]} active={streaming && message.id === messages.at(-1)?.id} />}
+                  {message.role === "assistant" && <ResponseProvenanceRow provenance={message.provenance} />}
                   <div className="message-content">{message.content || (streaming ? <span className="typing">Thinking</span> : "")}</div>
                   <ToolActivity calls={message.tool_calls ?? []} executions={message.tool_executions ?? []} onApproveWorkspaceWrite={approveWrite} />
                   <SourceList sources={message.sources ?? []} />

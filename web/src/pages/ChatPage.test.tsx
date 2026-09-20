@@ -42,7 +42,7 @@ function agentResponse() {
       result: { expression: "2 + 2", result: 4 },
     },
     { type: "assistant.delta", content: "A cited answer." },
-    { type: "turn.completed", run_id: "run-1", rounds: 2 },
+    { type: "turn.completed", run_id: "run-1", model: "local-test", rounds: 2, tools_used: ["web_search", "web_fetch", "calculator"], delegated_models: [], recovery_reasons: [] },
   ];
   return new Response(new ReadableStream({
     start(controller) {
@@ -118,6 +118,7 @@ describe("ChatPage research tools", () => {
     expect(source).toHaveAttribute("href", "https://example.com/report");
     expect(source).toHaveAttribute("target", "_blank");
     expect(screen.getByText("A deterministic research result.")).toBeInTheDocument();
+    expect(screen.getByText("Local model + 3 tools")).toBeInTheDocument();
     await waitFor(() => expect(agentRequest).toMatchObject({
       toolset: "assistant-tools",
       enabled_tools: ["web_search", "web_fetch", "calculator", "current_time", "workspace_list", "workspace_read", "workspace_write", "python_sandbox", "openrouter_delegate"],
