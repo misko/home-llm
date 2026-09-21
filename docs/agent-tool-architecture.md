@@ -63,6 +63,52 @@ adapter retains normalized result URLs but does not yet propagate SearXNG's
 per-engine warnings or attach a retrieval timestamp. Callers must therefore not
 interpret an empty result list as evidence of complete search coverage.
 
+## Explicit remote delegation
+
+An affirmative request such as "Can you run against Opus and Astra using open
+router?" creates a delegation plan before the first model round. Names resolve
+against the operator-approved model enum: Astra selects `openai/gpt-6-astra`, and
+Opus selects the highest approved stable, non-batch Claude Opus version. Unknown
+or unavailable explicit model IDs produce an actionable error; the agent must not
+silently substitute another model or finish with a generic API-access denial.
+When a request does not identify a model and several are approved, the agent asks
+the caller to name one. With a single approved model, it can select that model.
+Bare mentions, usage questions, and negated requests do not require delegation.
+This is a conservative text heuristic, not a general intent classifier.
+
+Only the planned remote models may execute, once each. Calls can be generated
+together or in separate rounds. This narrow exception permits multiple reviewers
+chosen by the user without allowing a remote result to authorize another tool or
+network destination. After the planned attempts, the local model synthesizes
+their actual results or failures with further tool execution disabled.
+
+Deployment approval remains explicit: add the intended IDs to the existing
+`LLM_LAB_OPENROUTER_ALLOWED_MODELS` list in the service environment and restart
+the gateway. For example, this deployment approves `anthropic/claude-opus-5`
+and `openai/gpt-6-astra`. API credentials remain outside version control.
+
+## Repeated-answer recovery
+
+When an answer repeats earlier assistant content instead of addressing the latest
+request, the orchestrator withholds that answer and allows one recovery. Ordinary
+questions recover using the latest request and collected evidence. Explicit
+delegation happens before synthesis, so its evidence is reused during recovery,
+including failures, rather than silently replaying the remote request.
+
+During required delegation, the tool schema contains only `openrouter_delegate`
+and the unresolved approved model IDs. A model that ignores the required tool call
+gets one clean retry with the user context and existing evidence preserved. The
+final answer runs without tools, with execution disabled on the server as well.
+Missing required delegation or another repeated answer ends in a clear, bounded
+error.
+
+Remote attribution comes from actual tool results. The completion event retains
+`repeated_answer` in `recovery_reasons`, and the UI displays that notice alongside
+tool activity and response provenance. Scripted backend tests cover the recovery
+transitions; a browser test covers expandable delegation evidence and provenance
+after history reload. These tests use simulated remote results and incur no
+OpenRouter charges.
+
 ## Declarative identities
 
 Tool evidence follows the same separation already used for models:

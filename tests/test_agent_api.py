@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from copy import deepcopy
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -256,6 +257,217 @@ async def test_agent_completion_reports_verified_openrouter_provenance() -> None
 
 
 @pytest.mark.asyncio
+async def test_explicit_opus_and_astra_request_is_delegated_before_local_answer() -> None:
+    delegated_requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        delegated_requests.append(payload)
+        model = payload["model"]
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": f"Review from {model}."}}],
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    registry = _openrouter_test_registry(
+        client,
+        allowed_models=("anthropic/claude-opus-5", "openai/gpt-6-astra"),
+    )
+    backend = _ScriptedBackend([
+        _multi_tool_response([
+            (
+                "opus",
+                "openrouter_delegate",
+                '{"model":"anthropic/claude-opus-5","prompt":"Review the release."}',
+            ),
+            (
+                "astra",
+                "openrouter_delegate",
+                '{"model":"openai/gpt-6-astra","prompt":"Review the release."}',
+            ),
+        ]),
+        _final_response("Opus and Astra both reviewed the release."),
+    ])
+    request = AgentTurnRequest(
+        messages=({
+            "role": "user",
+            "content": "Can you run against Opus and Astra using open router?",
+        },),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(registry, backend).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    first_payload = backend.requests[0]["payload"]
+    assert first_payload["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "openrouter_delegate"},
+    }
+    assert first_payload["tools"][0]["function"]["parameters"]["properties"]["model"]["enum"] == [
+        "anthropic/claude-opus-5",
+        "openai/gpt-6-astra",
+    ]
+    assert {request["model"] for request in delegated_requests} == {
+        "anthropic/claude-opus-5",
+        "openai/gpt-6-astra",
+    }
+    assert "tools" not in backend.requests[1]["payload"]
+    assert events[-1].delegated_models == (
+        "anthropic/claude-opus-5",
+        "openai/gpt-6-astra",
+    )
+
+
+@pytest.mark.asyncio
+async def test_planned_delegations_continue_sequentially_and_preserve_evidence() -> None:
+    delegated_requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        delegated_requests.append(payload)
+        marker = "OPUS-EVIDENCE" if "opus" in payload["model"] else "ASTRA-EVIDENCE"
+        return httpx.Response(200, json={"choices": [{"message": {"content": marker}}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"anthropic/claude-opus-5","prompt":"Review."}',
+            call_id="opus",
+        ),
+        _final_response("I cannot access external APIs."),
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-6-astra","prompt":"Review."}',
+            call_id="astra",
+        ),
+        _final_response("Both reviews completed."),
+    ])
+    request = AgentTurnRequest(
+        messages=({"role": "user", "content": "Can you run against Opus and Astra using open router?"},),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(
+                client,
+                allowed_models=("anthropic/claude-opus-5", "openai/gpt-6-astra"),
+            ),
+            backend,
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    second_forced = backend.requests[2]["payload"]
+    assert second_forced["tools"][0]["function"]["parameters"]["properties"]["model"]["enum"] == [
+        "openai/gpt-6-astra"
+    ]
+    final_context = backend.requests[3]["payload"]["messages"][-1]["content"]
+    assert "OPUS-EVIDENCE" in final_context
+    assert "ASTRA-EVIDENCE" in final_context
+    assert [request["model"] for request in delegated_requests] == [
+        "anthropic/claude-opus-5",
+        "openai/gpt-6-astra",
+    ]
+    assert events[-1].delegated_models == (
+        "anthropic/claude-opus-5",
+        "openai/gpt-6-astra",
+    )
+
+
+@pytest.mark.asyncio
+async def test_explicit_full_model_id_has_exact_boundaries_and_ignores_source_paths() -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Reviewed."}}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-6-astra-pro","prompt":"Review src/app.py."}',
+        ),
+        _final_response("Review complete."),
+    ])
+    request = AgentTurnRequest(
+        messages=({
+            "role": "user",
+            "content": "Ask OpenRouter model openai/gpt-6-astra-pro. to review src/app.py.",
+        },),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(
+                client,
+                allowed_models=("openai/gpt-6-astra", "openai/gpt-6-astra-pro"),
+            ),
+            backend,
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert [call["model"] for call in calls] == ["openai/gpt-6-astra-pro"]
+    assert events[-1].delegated_models == ("openai/gpt-6-astra-pro",)
+
+
+@pytest.mark.asyncio
+async def test_unapproved_explicit_openrouter_model_fails_before_generation() -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: pytest.fail(f"unexpected OpenRouter request: {request.url}")
+    ))
+    backend = _ScriptedBackend([_final_response()])
+    request = AgentTurnRequest(
+        messages=({
+            "role": "user",
+            "content": "Ask OpenRouter model anthropic/claude-opus-4.8 to review this.",
+        },),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        with pytest.raises(ToolPolicyError) as exc_info:
+            _ = [event async for event in AgentRunner(
+                _openrouter_test_registry(
+                    client, allowed_models=("anthropic/claude-opus-5",)
+                ),
+                backend,
+            ).run(
+                request,
+                model="local-test",
+                deployment="test-active",
+                base_url="http://backend.invalid/v1",
+            )]
+    finally:
+        await client.aclose()
+
+    assert exc_info.value.code == "openrouter_model_unavailable"
+    assert backend.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_agent_endpoint_executes_tool_and_returns_typed_sse(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     _publish_state(paths)
@@ -470,7 +682,8 @@ class _ScriptedBackend:
         self.requests: list[dict[str, Any]] = []
 
     async def complete(self, **kwargs: Any) -> Mapping[str, Any]:
-        self.requests.append(dict(kwargs))
+        # Snapshot the sent transcript before later rounds append tool results.
+        self.requests.append(deepcopy(kwargs))
         response = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
         if isinstance(response, Exception):
@@ -977,6 +1190,609 @@ async def test_repeated_previous_answer_gets_clean_recovery_and_provenance(
     assert "tools" not in retry and "tool_choice" not in retry
     assert "Latest user request:" in retry["messages"][1]["content"]
     assert "agent_repeated_answer" in " ".join(caplog.messages)
+
+
+def _openrouter_test_registry(
+    client: httpx.AsyncClient,
+    *, allowed_models: tuple[str, ...] = ("openai/gpt-test",),
+) -> ToolRegistry:
+    registry = ToolRegistry()
+    registry.register_provider(OpenRouterProvider(
+        OpenRouterSettings(api_key="test-key", allowed_models=allowed_models),
+        client=client,
+    ))
+    registry.register_toolset(ToolsetDefinition(
+        id="openrouter-delegation",
+        name="OpenRouter",
+        description="OpenRouter",
+        tools=("openrouter_delegate",),
+    ))
+    return registry
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_preserves_explicit_openrouter_delegation_intent() -> None:
+    delegated_requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        delegated_requests.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "The voltage rating needs verification."}}],
+            "usage": {"total_tokens": 11},
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    previous = "SOL completed its prior review. " + "Detailed old recommendation. " * 20
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-test","prompt":"Review whether the bleeder rating is addressed in this BOM."}',
+            call_id="recovery-delegation",
+        ),
+        _final_response("OpenRouter reports that the voltage rating still needs verification."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the old BOM."},
+            {"role": "assistant", "content": previous},
+            {
+                "role": "user",
+                "content": (
+                    "Please ask OpenRouter model openai/gpt-test to review whether the "
+                    "bleeder voltage rating is addressed in this BOM: two 2M ohm resistors."
+                ),
+            },
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(client), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    delegation_payload = backend.requests[0]["payload"]
+    assert [tool["function"]["name"] for tool in delegation_payload["tools"]] == [
+        "openrouter_delegate"
+    ]
+    assert delegation_payload["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "openrouter_delegate"},
+    }
+    assert delegation_payload["tools"][0]["function"]["parameters"]["properties"]["model"]["enum"] == ["openai/gpt-test"]
+    assert len(delegated_requests) == 1
+    assert "tools" not in backend.requests[1]["payload"]
+    assert "openrouter_delegate" in backend.requests[1]["payload"]["messages"][-1]["content"]
+    assert events[-1].tools_used == ("openrouter_delegate",)
+    assert events[-1].delegated_models == ("openai/gpt-test",)
+    assert events[-1].recovery_reasons == ()
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_recovery_executes_at_most_one_openrouter_call() -> None:
+    delegated_requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        delegated_requests.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "Delegated evidence."}}],
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    previous = "Prior remote review. " + "Old answer content. " * 24
+    backend = _ScriptedBackend([
+        _multi_tool_response([
+            (
+                "first",
+                "openrouter_delegate",
+                '{"model":"openai/gpt-test","prompt":"Review A."}',
+            ),
+            (
+                "second",
+                "openrouter_delegate",
+                '{"model":"openai/gpt-test","prompt":"Review B."}',
+            ),
+        ]),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the old BOM."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Ask OpenRouter to review the updated BOM."},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        with pytest.raises(ToolPolicyError) as exc_info:
+            _ = [event async for event in AgentRunner(
+                _openrouter_test_registry(client), backend
+            ).run(
+                request,
+                model="local-test",
+                deployment="test-active",
+                base_url="http://backend.invalid/v1",
+            )]
+    finally:
+        await client.aclose()
+
+    assert exc_info.value.code == "duplicate_planned_delegation"
+    assert delegated_requests == []
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_does_not_delegate_for_negated_openrouter_request() -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: pytest.fail(f"unexpected OpenRouter request: {request.url}")
+    ))
+    previous = "Prior review. " + "Old answer content. " * 24
+    backend = _ScriptedBackend([
+        _final_response(previous),
+        _final_response("I reviewed the supplied text locally."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the old BOM."},
+            {"role": "assistant", "content": previous},
+            {
+                "role": "user",
+                "content": "Do not ask OpenRouter; review the supplied BOM locally.",
+            },
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(client), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert "tools" not in backend.requests[1]["payload"]
+    assert events[-1].tools_used == ()
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_does_not_reenable_disabled_openrouter() -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: pytest.fail(f"unexpected OpenRouter request: {request.url}")
+    ))
+    previous = "Prior review. " + "Old answer content. " * 24
+    backend = _ScriptedBackend([
+        _final_response(previous),
+        _final_response("OpenRouter is unavailable for this turn, so I reviewed locally."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the old BOM."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Ask OpenRouter to review the updated BOM."},
+        ),
+        toolset="openrouter-delegation",
+        enabled_tools=(),
+    )
+
+    try:
+        with pytest.raises(ToolPolicyError) as exc_info:
+            _ = [event async for event in AgentRunner(
+                _openrouter_test_registry(client), backend
+            ).run(
+                request,
+                model="local-test",
+                deployment="test-active",
+                base_url="http://backend.invalid/v1",
+            )]
+    finally:
+        await client.aclose()
+
+    assert exc_info.value.code == "openrouter_unavailable"
+    assert backend.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_recovery_synthesizes_openrouter_refusal() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": None, "refusal": "I cannot help."}}],
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    previous = "Prior review. " + "Old answer content. " * 24
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-test","prompt":"Review the updated BOM."}',
+        ),
+        _final_response("The requested remote reviewer declined to answer."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the old BOM."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Ask OpenRouter to review the updated BOM."},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(client), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    failures = [event for event in events if event.type == "tool.failed"]
+    assert [event.error.code for event in failures] == ["openrouter_refusal"]
+    synthesis = backend.requests[1]["payload"]
+    assert "tools" not in synthesis
+    assert '"code":"openrouter_refusal"' in synthesis["messages"][-1]["content"]
+    assert events[-1].delegated_models == ()
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_reuses_completed_openrouter_evidence() -> None:
+    delegated_requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        delegated_requests.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "Fresh delegated evidence."}}],
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    previous = "Prior review. " + "Old answer content. " * 24
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-test","prompt":"Review the updated BOM."}',
+        ),
+        _final_response(previous),
+        _final_response("The delegated evidence says the updated BOM needs another check."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the old BOM."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Ask OpenRouter to review the updated BOM."},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(client), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert len(delegated_requests) == 1
+    assert "tools" not in backend.requests[2]["payload"]
+    assert any(
+        "Fresh delegated evidence" in (message.get("content") or "")
+        for message in backend.requests[2]["payload"]["messages"]
+    )
+    assert events[-1].delegated_models == ("openai/gpt-test",)
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_reuses_failed_openrouter_attempt() -> None:
+    delegated_requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        delegated_requests.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": None, "refusal": "Declined."}}],
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    previous = "Prior release review. " + "Old release-note content. " * 24
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-test","prompt":"Review the release notes."}',
+        ),
+        _final_response(previous),
+        _final_response("The remote review was declined, so there is no remote assessment."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the earlier release notes."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Ask OpenRouter to review the updated release notes."},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(client), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert len(delegated_requests) == 1
+    assert "tools" not in backend.requests[2]["payload"]
+    assert any(
+        '"code":"openrouter_refusal"' in (message.get("content") or "")
+        for message in backend.requests[2]["payload"]["messages"]
+    )
+    assert events[-1].tools_used == ()
+
+
+@pytest.mark.asyncio
+async def test_repeated_answer_recovery_rejects_unexpected_tool() -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: pytest.fail(f"unexpected OpenRouter request: {request.url}")
+    ))
+    previous = "Prior release review. " + "Old release-note content. " * 24
+    backend = _ScriptedBackend([
+        _final_response(previous),
+        _tool_response("calculator", '{"expression":"2 + 2"}'),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the earlier release notes."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Ask OpenRouter to review the updated release notes."},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        with pytest.raises(AgentUpstreamError) as exc_info:
+            _ = [event async for event in AgentRunner(
+                _openrouter_test_registry(client), backend
+            ).run(
+                request,
+                model="local-test",
+                deployment="test-active",
+                base_url="http://backend.invalid/v1",
+            )]
+    finally:
+        await client.aclose()
+
+    assert exc_info.value.code == "required_delegation_invalid"
+    assert backend.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_recovery_final_synthesis_cannot_execute_native_tool_call() -> None:
+    delegated_requests: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        delegated_requests.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "Remote review evidence."}}],
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    previous = "Prior release review. " + "Old release-note content. " * 24
+    backend = _ScriptedBackend([
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-test","prompt":"Review the release notes."}',
+        ),
+        _tool_response(
+            "openrouter_delegate",
+            '{"model":"openai/gpt-test","prompt":"Review something else."}',
+            call_id="forbidden-second-delegation",
+        ),
+        _final_response("The remote review found no release blocker."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the earlier release notes."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Ask OpenRouter to review the updated release notes."},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(client), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert len(delegated_requests) == 1
+    started = [event for event in events if event.type == "tool.started"]
+    assert len(started) == 1
+    assert started[0].name == "openrouter_delegate"
+    assert backend.calls == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("question", [
+    "How do I use OpenRouter in this interface?",
+    "Why did my call to OpenRouter fail?",
+])
+async def test_openrouter_usage_question_does_not_trigger_recovery_delegation(question: str) -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: pytest.fail(f"unexpected OpenRouter request: {request.url}")
+    ))
+    previous = "Prior explanation. " + "Old documentation text. " * 24
+    backend = _ScriptedBackend([
+        _final_response(previous),
+        _final_response("OpenRouter delegation is available through the chat setting."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Explain delegation."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": question},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(
+            _openrouter_test_registry(client), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert "tools" not in backend.requests[1]["payload"]
+    assert events[-1].tools_used == ()
+
+
+@pytest.mark.asyncio
+async def test_required_recovery_delegation_rejects_plain_model_answer() -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: pytest.fail(f"unexpected OpenRouter request: {request.url}")
+    ))
+    previous = "Prior release review. " + "Old release-note content. " * 24
+    backend = _ScriptedBackend([
+        _final_response(previous),
+        _final_response("I reviewed this locally instead."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the earlier release notes."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Please ask OpenRouter to review the updated release notes."},
+        ),
+        toolset="openrouter-delegation",
+    )
+
+    try:
+        with pytest.raises(AgentUpstreamError) as exc_info:
+            _ = [event async for event in AgentRunner(
+                _openrouter_test_registry(client), backend
+            ).run(
+                request,
+                model="local-test",
+                deployment="test-active",
+                base_url="http://backend.invalid/v1",
+            )]
+    finally:
+        await client.aclose()
+
+    assert exc_info.value.code == "required_delegation_missing"
+
+
+@pytest.mark.asyncio
+async def test_recovery_repeating_prior_answer_twice_fails_boundedly() -> None:
+    previous = "Prior release review. " + "Old release-note content. " * 24
+    backend = _ScriptedBackend([
+        _final_response(previous),
+        _final_response(previous),
+    ])
+    request = AgentTurnRequest(messages=(
+        {"role": "user", "content": "Review the earlier release notes."},
+        {"role": "assistant", "content": previous},
+        {"role": "user", "content": "What changed in the updated release notes?"},
+    ))
+
+    with pytest.raises(AgentUpstreamError) as exc_info:
+        _ = [event async for event in AgentRunner(
+            create_builtin_registry(), backend
+        ).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+
+    assert exc_info.value.code == "model_repeated_previous_answer"
+    assert backend.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_recovery_does_not_reenable_openrouter_after_open_world_fetch() -> None:
+    web_calls: list[tuple[str, str]] = []
+    openrouter_calls: list[dict[str, Any]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        openrouter_calls.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "Unexpected remote review."}}],
+        })
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    registry = _open_world_registry(web_calls, fetched_text="Fresh release evidence.")
+    registry.register_provider(OpenRouterProvider(
+        OpenRouterSettings(api_key="test-key", allowed_models=("openai/gpt-test",)),
+        client=client,
+    ))
+    registry.register_toolset(ToolsetDefinition(
+        id="combined-research",
+        name="Combined research",
+        description="Combined research",
+        tools=("web_search", "web_fetch", "openrouter_delegate"),
+    ))
+    previous = "Prior release review. " + "Old release-note content. " * 24
+    backend = _ScriptedBackend([
+        _tool_response("web_search", '{"query":"release notes"}', call_id="search"),
+        _tool_response(
+            "web_fetch",
+            '{"url":"https://approved.example/article"}',
+            call_id="fetch",
+        ),
+        _final_response(previous),
+        _final_response("I used the fetched evidence; remote delegation is unavailable."),
+    ])
+    request = AgentTurnRequest(
+        messages=(
+            {"role": "user", "content": "Review the earlier release notes."},
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": "Check the updated release notes using fetched evidence."},
+        ),
+        toolset="combined-research",
+    )
+
+    try:
+        events = [event async for event in AgentRunner(registry, backend).run(
+            request,
+            model="local-test",
+            deployment="test-active",
+            base_url="http://backend.invalid/v1",
+        )]
+    finally:
+        await client.aclose()
+
+    assert openrouter_calls == []
+    assert "tools" not in backend.requests[3]["payload"]
+    assert events[-1].tools_used == ("web_search", "web_fetch")
 
 
 @pytest.mark.asyncio

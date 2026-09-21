@@ -39,10 +39,27 @@ def _literal_user_urls(request: AgentTurnRequest) -> set[str]:
 class TurnToolPolicy:
     """Prevent untrusted open-world output from choosing the next destination."""
 
-    def __init__(self, request: AgentTurnRequest) -> None:
+    def __init__(
+        self,
+        request: AgentTurnRequest,
+        *,
+        preauthorized_openrouter_models: frozenset[str] = frozenset(),
+    ) -> None:
         self._approved_fetch_urls = _literal_user_urls(request)
         self._search_completed = False
         self._open_world_closed = False
+        self._preauthorized_openrouter_models = preauthorized_openrouter_models
+
+    def _is_preauthorized_openrouter(
+        self,
+        definition: ToolDefinition,
+        arguments: Mapping[str, Any],
+    ) -> bool:
+        return (
+            definition.name == "openrouter_delegate"
+            and isinstance(arguments.get("model"), str)
+            and arguments["model"] in self._preauthorized_openrouter_models
+        )
 
     def before(
         self,
@@ -51,6 +68,8 @@ class TurnToolPolicy:
     ) -> None:
         effect = definition.effect
         if effect == "local":
+            return
+        if self._is_preauthorized_openrouter(definition, arguments):
             return
         if self._open_world_closed:
             raise ToolPolicyError(
@@ -79,6 +98,12 @@ class TurnToolPolicy:
         """Hide exhausted open-world capabilities from later model rounds."""
 
         effect = definition.effect
+        if (
+            self._open_world_closed
+            and definition.name == "openrouter_delegate"
+            and self._preauthorized_openrouter_models
+        ):
+            return True
         if self._open_world_closed:
             return False
         if effect == "local":
@@ -89,6 +114,12 @@ class TurnToolPolicy:
 
     def observe(self, definition: ToolDefinition, result: Any) -> None:
         effect = definition.effect
+        if (
+            definition.name == "openrouter_delegate"
+            and self._preauthorized_openrouter_models
+        ):
+            self._open_world_closed = True
+            return
         if effect == "open_world_search":
             self._search_completed = True
             if isinstance(result, Mapping):
